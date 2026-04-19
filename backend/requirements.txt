@@ -1,0 +1,14 @@
+fastapi[standard]
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+asyncpg
+python-dotenv
+python-jose[cryptography]
+argon2-cffi
+cryptography
+httpx
+python-multipart
+pydantic[email]
+aiosmtplib
+email-validator
