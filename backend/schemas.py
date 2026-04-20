@@ -84,6 +84,7 @@ class ApiKeyResponse(BaseModel):
     status: str
     last_checked: datetime
     created_at: datetime
+    tokens_used: int = 0
 
     class Config:
         from_attributes = True

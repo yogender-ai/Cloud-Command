@@ -94,12 +94,19 @@ def verify_vault_otp(
 @router.get("", response_model=List[schemas.ApiKeyResponse])
 def list_keys(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     """List all API keys for the current user."""
-    return (
+    keys = (
         db.query(models.ApiKey)
         .filter(models.ApiKey.user_id == user.id)
         .order_by(models.ApiKey.created_at.desc())
         .all()
     )
+    for k in keys:
+        k.tokens_used = (
+            db.query(func.sum(models.ApiUsageLog.tokens_used))
+            .filter(models.ApiUsageLog.api_key_id == k.id)
+            .scalar()
+        ) or 0
+    return keys
 
 
 @router.post("", response_model=schemas.ApiKeyResponse, status_code=201)
@@ -151,6 +158,7 @@ async def create_key(
     except Exception as e:
         print(f"API key add email failed: {e}")
 
+    api_key.tokens_used = 0
     return api_key
 
 
@@ -177,6 +185,11 @@ def update_key(
         key.category = None
     db.commit()
     db.refresh(key)
+    key.tokens_used = (
+        db.query(func.sum(models.ApiUsageLog.tokens_used))
+        .filter(models.ApiUsageLog.api_key_id == key.id)
+        .scalar()
+    ) or 0
     return key
 
 
@@ -238,6 +251,11 @@ async def recheck_key(
     key.last_checked = datetime.now(timezone.utc)
     db.commit()
     db.refresh(key)
+    key.tokens_used = (
+        db.query(func.sum(models.ApiUsageLog.tokens_used))
+        .filter(models.ApiUsageLog.api_key_id == key.id)
+        .scalar()
+    ) or 0
     return key
 
 
@@ -250,7 +268,7 @@ def get_summary(db: Session = Depends(get_db), user: models.User = Depends(get_c
     total = len(keys)
     active = len([k for k in keys if "active" in k.status.lower()])
 
-    today = datetime.now(timezone.utc).date()
+    today = datetime.now().date()  # User expects local local dashboard date
     tokens_today = (
         db.query(func.sum(models.ApiUsageLog.tokens_used))
         .filter(

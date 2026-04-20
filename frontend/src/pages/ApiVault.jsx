@@ -95,7 +95,7 @@ function DetailModal({ apiKey, onClose }) {
           </div>
           <div className="card" style={{ padding: '16px', textAlign: 'center' }}>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Tokens Used (Est.)</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--accent-purple)' }}>{apiKey.tokens_used.toLocaleString()}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--accent-purple)' }}>{(apiKey.tokens_used || 0).toLocaleString()}</div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>In current window</div>
           </div>
           <div className="card" style={{ padding: '16px', textAlign: 'center' }}>
@@ -112,7 +112,7 @@ function DetailModal({ apiKey, onClose }) {
             </p>
             <br/>
             <p style={{ color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.6 }}>
-                Currently, <strong>{apiKey.tokens_used}</strong> tokens have been successfully consumed via Cloud-Command for this API Key. 
+                Currently, <strong>{apiKey.tokens_used || 0}</strong> tokens have been successfully consumed via Cloud-Command for this API Key. 
             </p>
         </div>
       </motion.div>
@@ -340,39 +340,67 @@ export default function ApiVault() {
           <p>{keys.length === 0 ? 'Add your first API key to start monitoring its status and usage.' : 'Try a different category filter.'}</p>
         </div>
       ) : (
-        <div className="grid grid-3">
-          <AnimatePresence>
-            {filtered.map(key => (
-              <motion.div key={key.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
-                className="card card-interactive" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }} onClick={() => setSelectedKey(key)}>
-                  <div>
-                    <h3 style={{ fontSize: 16, fontWeight: 700 }}>{key.name}</h3>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2 }}>{key.provider}</div>
-                  </div>
-                  <StatusBadge status={key.status} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 40 }}>
+          {(filterCat === 'All' ? [...allCategories, null] : [filterCat === 'Uncategorized' ? null : filterCat]).map(cat => {
+            const catKeys = filtered.filter(k => k.category === cat || (!k.category && !cat));
+            if (catKeys.length === 0) return null;
+            
+            return (
+              <div key={cat || 'Uncategorized'}>
+                {filterCat === 'All' && (
+                  <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--accent-indigo)' }} />
+                    {cat || 'Uncategorized'} Projects
+                  </h2>
+                )}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 24, paddingLeft: filterCat === 'All' ? 16 : 0, borderLeft: filterCat === 'All' ? '2px solid var(--border)' : 'none' }}>
+                  {[...new Set(catKeys.map(k => k.provider).filter(Boolean))].map(provider => {
+                    const providerKeys = catKeys.filter(k => k.provider === provider);
+                    return (
+                      <div key={provider}>
+                        <h3 style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          {provider} API Keys
+                        </h3>
+                        <div className="grid grid-3">
+                          <AnimatePresence>
+                            {providerKeys.map(key => (
+                              <motion.div key={key.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
+                                className="card card-interactive" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }} onClick={() => setSelectedKey(key)}>
+                                  <div>
+                                    <h3 style={{ fontSize: 16, fontWeight: 700 }}>{key.name}</h3>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2 }}>{key.provider}</div>
+                                  </div>
+                                  <StatusBadge status={key.status} />
+                                </div>
+                                <CategoryEditor
+                                  category={key.category}
+                                  suggestions={allCategories.filter(c => c !== key.category)}
+                                  onSave={cat => handleCategoryChange(key.id, cat)}
+                                />
+                                <div onClick={() => setSelectedKey(key)} style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <KeyRound size={13} style={{ opacity: 0.5 }} /> ********************
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 'auto' }}>
+                                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Checked: {new Date(key.last_checked).toLocaleString()}</div>
+                                  <div style={{ display: 'flex', gap: 4 }}>
+                                    <button className="btn btn-ghost btn-icon" onClick={(e) => handleCheck(e, key.id)} title="Re-validate"><RefreshCw size={14} /></button>
+                                    <button className="btn btn-ghost btn-icon" onClick={(e) => { e.stopPropagation(); attemptDelete(key.id); }} title="Delete">
+                                      {sending && requireOtpFor?.id === key.id ? <div className="spinner" style={{width:14,height:14}}/> : <Trash2 size={14} color="var(--accent-rose)" />}
+                                    </button>
+                                  </div>
+                                </div>
+                              </motion.div>
+                            ))}
+                          </AnimatePresence>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-                {/* Inline category editor */}
-                <CategoryEditor
-                  category={key.category}
-                  suggestions={allCategories.filter(c => c !== key.category)}
-                  onSave={cat => handleCategoryChange(key.id, cat)}
-                />
-                <div onClick={() => setSelectedKey(key)} style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <KeyRound size={13} style={{ opacity: 0.5 }} /> ********************
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 'auto' }}>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Checked: {new Date(key.last_checked).toLocaleString()}</div>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    <button className="btn btn-ghost btn-icon" onClick={(e) => handleCheck(e, key.id)} title="Re-validate"><RefreshCw size={14} /></button>
-                    <button className="btn btn-ghost btn-icon" onClick={(e) => { e.stopPropagation(); attemptDelete(key.id); }} title="Delete">
-                      {sending && requireOtpFor?.id === key.id ? <div className="spinner" style={{width:14,height:14}}/> : <Trash2 size={14} color="var(--accent-rose)" />}
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </AnimatePresence>
+              </div>
+            );
+          })}
         </div>
       )}
 
