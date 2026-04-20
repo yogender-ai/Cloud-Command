@@ -4,6 +4,7 @@ import {
   LayoutDashboard, Globe, KeyRound, Server, Triangle,
   Settings, ChevronLeft, ChevronRight, Menu, X
 } from 'lucide-react';
+import ThemeSwitcher from './ThemeSwitcher';
 
 const navItems = [
   { label: 'Overview', to: '/', icon: LayoutDashboard, section: 'command' },
@@ -40,14 +41,14 @@ export default function Sidebar() {
       <aside className={`sidebar ${collapsed ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
         {/* Brand */}
         <div className="sidebar-brand">
-          <div className="sidebar-brand-icon" style={{ background: 'linear-gradient(135deg,#00c6ff,#7b2ff7)', boxShadow: '0 0 20px rgba(99,102,241,0.35)' }}>
+          <div className="sidebar-brand-icon">
             <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
               <text x="1" y="15" fontSize="14" fontWeight="900" fontFamily="monospace" fill="#fff">&gt;_</text>
             </svg>
           </div>
           {!collapsed && (
             <div className="sidebar-brand-text">
-              <h1 style={{ background: 'linear-gradient(135deg,#00c6ff,#a78bfa)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>Cloud Command</h1>
+              <h1>Cloud Command</h1>
               <p>DevOps Center</p>
             </div>
           )}
@@ -81,8 +82,9 @@ export default function Sidebar() {
           })}
         </nav>
 
-        {/* Collapse toggle */}
+        {/* Footer: Theme Switcher + Collapse */}
         <div className="sidebar-footer">
+          <ThemeSwitcher collapsed={collapsed} />
           <button className="sidebar-collapse-btn" onClick={() => setCollapsed(!collapsed)}>
             {collapsed ? <ChevronRight size={16} /> : <><ChevronLeft size={16} /> <span>Collapse</span></>}
           </button>
