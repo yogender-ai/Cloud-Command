@@ -1,16 +1,18 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 
 import models
 import schemas
 from dependencies import get_db, get_current_user
 from security import hash_password, verify_password, create_access_token
+from limiter import limiter
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=schemas.TokenResponse, status_code=201)
-def register(req: schemas.RegisterRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def register(request: Request, req: schemas.RegisterRequest, db: Session = Depends(get_db)):
     """Create a new user account with Argon2id-hashed password."""
     if len(req.password) < 8:
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
@@ -32,7 +34,8 @@ def register(req: schemas.RegisterRequest, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=schemas.TokenResponse)
-def login(req: schemas.LoginRequest, db: Session = Depends(get_db)):
+@limiter.limit("5/minute")
+def login(request: Request, req: schemas.LoginRequest, db: Session = Depends(get_db)):
     """Authenticate a user and return a JWT access token."""
     user = db.query(models.User).filter(models.User.email == req.email).first()
     if not user or not verify_password(req.password, user.password_hash):

@@ -5,13 +5,16 @@ Main FastAPI application entry point.
 
 import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import date
 
 from database import engine, SessionLocal
 from models import Base, PlatformVisit
 from config import settings
+from limiter import limiter
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 
 # ── Lifespan: DB init + background pinger ──
@@ -26,7 +29,7 @@ async def run_pinger_background():
 async def lifespan(app: FastAPI):
     # Startup: create tables
     Base.metadata.create_all(bind=engine)
-    print("✅ Database tables created/verified")
+    print("Database tables created/verified")
 
     # Safe migrations: add new nullable columns without losing existing data
     # create_all() never alters existing tables, so we do it manually.
@@ -66,7 +69,7 @@ def _safe_migrate():
                 # PostgreSQL raises if column already exists (shouldn't with IF NOT EXISTS),
                 # or if running SQLite which uses different syntax — just skip.
                 print(f"⚠️  Migration skipped ({e.__class__.__name__}): {sql[:60]}")
-    print("✅ Safe migrations applied")
+    print("Safe migrations applied")
 
 
 # ── App ──
@@ -78,13 +81,26 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ── Rate Limiter ──
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
 
 
 # ── Mount Routers ──

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, timezone
 import random
@@ -8,6 +8,7 @@ import models
 import schemas
 from dependencies import get_db, get_current_user
 from security import hash_password, verify_password
+from limiter import limiter
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -23,7 +24,9 @@ def get_profile(user: models.User = Depends(get_current_user)):
 
 
 @router.post("/notification-email/request-otp")
+@limiter.limit("3/minute")
 def request_otp(
+    request: Request,
     req: schemas.NotificationEmailRequest,
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
@@ -47,7 +50,9 @@ def request_otp(
 
 
 @router.post("/notification-email/verify-otp")
+@limiter.limit("5/minute")
 def verify_otp(
+    request: Request,
     req: schemas.OTPVerifyRequest,
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
@@ -75,7 +80,9 @@ def verify_otp(
 
 
 @router.post("/change-password")
+@limiter.limit("3/minute")
 def change_password(
+    request: Request,
     req: schemas.ChangePasswordRequest,
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
