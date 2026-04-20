@@ -28,6 +28,10 @@ async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     print("✅ Database tables created/verified")
 
+    # Safe migrations: add new nullable columns without losing existing data
+    # create_all() never alters existing tables, so we do it manually.
+    _safe_migrate()
+
     # Start background pinger
     pinger_task = asyncio.create_task(run_pinger_background())
 
@@ -39,6 +43,30 @@ async def lifespan(app: FastAPI):
         await pinger_task
     except asyncio.CancelledError:
         pass
+
+
+def _safe_migrate():
+    """
+    Add new columns to existing tables without destroying data.
+    Each statement uses IF NOT EXISTS (PostgreSQL ≥ 9.6) so it's
+    idempotent — safe to run on every startup.
+    """
+    migrations = [
+        # Category columns added in v2.1.0
+        "ALTER TABLE monitors          ADD COLUMN IF NOT EXISTS category VARCHAR(100)",
+        "ALTER TABLE api_keys          ADD COLUMN IF NOT EXISTS category VARCHAR(100)",
+        "ALTER TABLE platform_accounts ADD COLUMN IF NOT EXISTS category VARCHAR(100)",
+    ]
+    with engine.connect() as conn:
+        for sql in migrations:
+            try:
+                conn.execute(__import__("sqlalchemy").text(sql))
+                conn.commit()
+            except Exception as e:
+                # PostgreSQL raises if column already exists (shouldn't with IF NOT EXISTS),
+                # or if running SQLite which uses different syntax — just skip.
+                print(f"⚠️  Migration skipped ({e.__class__.__name__}): {sql[:60]}")
+    print("✅ Safe migrations applied")
 
 
 # ── App ──
