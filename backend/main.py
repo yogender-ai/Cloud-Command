@@ -67,6 +67,7 @@ from routers.apikeys import router as apikeys_router
 from routers.render import router as render_router
 from routers.vercel import router as vercel_router
 from routers.settings import router as settings_router
+from routers.tracking import router as tracking_router
 
 app.include_router(auth_router)
 app.include_router(monitors_router)
@@ -74,6 +75,7 @@ app.include_router(apikeys_router)
 app.include_router(render_router)
 app.include_router(vercel_router)
 app.include_router(settings_router)
+app.include_router(tracking_router)
 
 
 # ── Utility Endpoints ──

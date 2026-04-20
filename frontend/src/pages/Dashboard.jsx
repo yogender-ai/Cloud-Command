@@ -62,7 +62,7 @@ export default function Dashboard() {
 
   const monitorsUp = monitors.filter(m => m.status === 'UP').length;
   const monitorsDown = monitors.length - monitorsUp;
-  const uptime = monitors.length > 0 ? ((monitorsUp / monitors.length) * 100).toFixed(1) : '100.0';
+  const uptime = monitors.length > 0 ? ((monitorsUp / monitors.length) * 100).toFixed(1) : '–';
 
   const stats = [
     {

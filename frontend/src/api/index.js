@@ -38,12 +38,12 @@ export const registerRequest = (email, password) =>
   api.post('/auth/register', { email, password }).then(r => r.data);
 export const getMe = () => api.get('/auth/me').then(r => r.data);
 
-// ── Monitors ──
 export const getMonitors = () => api.get('/monitors').then(r => r.data);
 export const addMonitor = (data) => api.post('/monitors', data).then(r => r.data);
 export const deleteMonitor = (id) => api.delete(`/monitors/${id}`);
 export const getMonitorLogs = (id) => api.get(`/monitors/${id}/logs`).then(r => r.data);
 export const getMonitorAnalytics = (id) => api.get(`/monitors/${id}/analytics`).then(r => r.data);
+export const inspectMonitor = (id) => api.get(`/monitors/${id}/inspect`).then(r => r.data);
 export const exportMonitorCSV = (id) =>
   api.get(`/monitors/${id}/logs/csv`, { responseType: 'blob' }).then(r => r.data);
 
@@ -54,6 +54,8 @@ export const deleteApiKey = (id) => api.delete(`/apikeys/${id}`);
 export const checkApiKey = (id) => api.post(`/apikeys/${id}/check`).then(r => r.data);
 export const getApiKeySummary = () => api.get('/apikeys/summary').then(r => r.data);
 export const getApiKeyUsage = (id) => api.get(`/apikeys/${id}/usage`).then(r => r.data);
+export const requestVaultOtp = () => api.post('/apikeys/request-view-otp').then(r => r.data);
+export const verifyVaultOtp = (code) => api.post('/apikeys/verify-view-otp', { code }).then(r => r.data);
 
 // ── Render ──
 export const getRenderAccounts = () => api.get('/render/accounts').then(r => r.data);

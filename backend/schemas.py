@@ -129,6 +129,10 @@ class ChangePasswordRequest(BaseModel):
     new_password: str
 
 
+class VaultOtpVerify(BaseModel):
+    code: str
+
+
 # ──────────────────────────────────────
 # ANALYTICS
 # ──────────────────────────────────────

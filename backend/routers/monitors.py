@@ -191,3 +191,84 @@ def get_monitor_analytics(
     daily_data = [{"date": d.isoformat(), "visits": v} for d, v in daily]
 
     return {"hourlyVisits": hourly_data, "dailyVisits": daily_data}
+
+
+@router.get("/{monitor_id}/inspect")
+async def inspect_monitor(
+    monitor_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Fetch SSL certificate, HTTP headers and status for a monitored site."""
+    import ssl
+    import socket
+    import httpx
+    from urllib.parse import urlparse
+    from datetime import datetime, timezone
+
+    monitor = (
+        db.query(models.Monitor)
+        .filter(models.Monitor.id == monitor_id, models.Monitor.user_id == user.id)
+        .first()
+    )
+    if not monitor:
+        raise HTTPException(status_code=404, detail="Monitor not found")
+
+    result = {
+        "ssl": None,
+        "headers": {},
+        "status_code": None,
+        "redirect_chain": [],
+    }
+
+    parsed = urlparse(monitor.url)
+    hostname = parsed.hostname or ""
+    is_https = parsed.scheme == "https"
+
+    # SSL certificate info
+    if is_https and hostname:
+        try:
+            ctx = ssl.create_default_context()
+            with socket.create_connection((hostname, 443), timeout=8) as sock:
+                with ctx.wrap_socket(sock, server_hostname=hostname) as ssock:
+                    cert = ssock.getpeercert()
+                    not_after_str = cert.get("notAfter", "")
+                    expire_dt = datetime.strptime(not_after_str, "%b %d %H:%M:%S %Y %Z").replace(tzinfo=timezone.utc) if not_after_str else None
+                    days_left = (expire_dt - datetime.now(timezone.utc)).days if expire_dt else None
+                    issuer = dict(x[0] for x in cert.get("issuer", []))
+                    subject = dict(x[0] for x in cert.get("subject", []))
+                    result["ssl"] = {
+                        "valid": True,
+                        "issuer": issuer.get("organizationName", issuer.get("commonName", "Unknown")),
+                        "subject": subject.get("commonName", hostname),
+                        "expires": expire_dt.strftime("%Y-%m-%d") if expire_dt else None,
+                        "days_left": days_left,
+                    }
+        except ssl.SSLCertVerificationError:
+            result["ssl"] = {"valid": False, "issuer": None, "subject": hostname, "expires": None, "days_left": None}
+        except Exception as e:
+            result["ssl"] = {"valid": None, "error": str(e)}
+
+    # HTTP headers
+    KEEP_HEADERS = [
+        "content-type", "server", "x-frame-options", "strict-transport-security",
+        "x-content-type-options", "cache-control", "x-powered-by",
+        "content-security-policy", "referrer-policy", "cf-ray",
+    ]
+    redirect_chain = []
+    try:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            resp = await client.head(monitor.url, headers={"User-Agent": "CloudCommand/1.0"})
+            result["status_code"] = resp.status_code
+            result["headers"] = {
+                k: v for k, v in resp.headers.items()
+                if k.lower() in KEEP_HEADERS
+            }
+            for r in resp.history:
+                redirect_chain.append({"from": str(r.url), "status": r.status_code})
+            result["redirect_chain"] = redirect_chain
+    except Exception as e:
+        result["headers"] = {"error": str(e)}
+
+    return result
+
