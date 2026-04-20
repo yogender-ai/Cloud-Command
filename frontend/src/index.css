@@ -793,63 +793,176 @@ a:hover { text-decoration: underline; }
 }
 
 /* ══════════════════════════════════════
-   AUTH PAGES
+   AUTH PAGES — SPLIT SCREEN
    ══════════════════════════════════════ */
 
-.auth-page {
+.auth-split {
+  display: flex;
   min-height: 100vh;
+}
+
+/* ── Left animated panel ── */
+.auth-left {
+  flex: 0 0 55%;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(145deg, #07070f 0%, #0d0d1e 60%, #090914 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px;
-  position: relative;
-  overflow: hidden;
 }
 
-.auth-page::before {
-  content: '';
+.auth-left-glow {
   position: absolute;
-  width: 600px;
-  height: 600px;
-  background: radial-gradient(circle, rgba(99, 102, 241, 0.08) 0%, transparent 70%);
-  top: -200px;
-  right: -200px;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 50% at 30% 40%, rgba(99,102,241,0.12) 0%, transparent 70%),
+    radial-gradient(ellipse 50% 40% at 70% 70%, rgba(168,85,247,0.08) 0%, transparent 70%);
   pointer-events: none;
 }
 
-.auth-page::after {
+/* Subtle dot grid */
+.auth-left::before {
   content: '';
   position: absolute;
-  width: 400px;
-  height: 400px;
-  background: radial-gradient(circle, rgba(168, 85, 247, 0.06) 0%, transparent 70%);
-  bottom: -100px;
-  left: -100px;
+  inset: 0;
+  background-image: radial-gradient(rgba(99,102,241,0.08) 1px, transparent 1px);
+  background-size: 32px 32px;
   pointer-events: none;
 }
 
-.auth-card {
-  width: 100%;
-  max-width: 420px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-2xl);
-  padding: 40px;
-  box-shadow: var(--shadow-elevated);
+.auth-left-content {
   position: relative;
   z-index: 1;
+  padding: 60px;
+  max-width: 520px;
 }
 
-.auth-logo {
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius-md);
-  background: var(--gradient-primary);
+.auth-left-logo {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #00c6ff, #7b2ff7);
   display: flex;
   align-items: center;
   justify-content: center;
   margin-bottom: 24px;
-  box-shadow: var(--shadow-glow-indigo);
+  box-shadow: 0 0 40px rgba(99,102,241,0.4);
+}
+
+.auth-left-title {
+  font-size: 36px;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  background: linear-gradient(135deg, #fff 30%, #a78bfa 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 14px;
+  line-height: 1.1;
+}
+
+.auth-left-sub {
+  font-size: 15px;
+  color: #6a6a82;
+  line-height: 1.7;
+  margin-bottom: 40px;
+}
+
+.auth-features {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.auth-feature-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.auth-feature-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(99,102,241,0.12);
+  border: 1px solid rgba(99,102,241,0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #a78bfa;
+}
+
+.auth-feature-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: #e4e4f0;
+  margin-bottom: 2px;
+}
+
+.auth-feature-desc {
+  font-size: 12px;
+  color: #5a5a72;
+}
+
+/* Floating blobs */
+.auth-blob {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  pointer-events: none;
+  animation: blobFloat 8s ease-in-out infinite;
+}
+
+.auth-blob-1 {
+  width: 300px;
+  height: 300px;
+  background: rgba(99,102,241,0.06);
+  bottom: -80px;
+  right: -60px;
+}
+
+.auth-blob-2 {
+  width: 200px;
+  height: 200px;
+  background: rgba(168,85,247,0.05);
+  top: 40px;
+  left: -40px;
+  animation-delay: -4s;
+}
+
+@keyframes blobFloat {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-20px) scale(1.05); }
+}
+
+/* ── Right form panel ── */
+.auth-right {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 32px;
+  background: var(--bg-primary);
+  overflow-y: auto;
+}
+
+.auth-form-card {
+  width: 100%;
+  max-width: 400px;
+}
+
+.auth-form-logo {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #00c6ff, #7b2ff7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 24px;
+  box-shadow: 0 0 24px rgba(99,102,241,0.3);
 }
 
 .auth-title {
@@ -862,20 +975,13 @@ a:hover { text-decoration: underline; }
 .auth-subtitle {
   color: var(--text-muted);
   font-size: 14px;
-  margin-bottom: 32px;
+  margin-bottom: 28px;
 }
 
 .auth-form {
   display: flex;
   flex-direction: column;
   gap: 16px;
-}
-
-.auth-form .btn-primary {
-  width: 100%;
-  padding: 14px;
-  margin-top: 8px;
-  font-size: 15px;
 }
 
 .auth-footer {
@@ -897,7 +1003,72 @@ a:hover { text-decoration: underline; }
   border-radius: var(--radius-sm);
   font-size: 13px;
   border: 1px solid rgba(244, 63, 94, 0.2);
+  margin-bottom: 4px;
 }
+
+@media (max-width: 900px) {
+  .auth-split { flex-direction: column; }
+  .auth-left { flex: 0 0 auto; padding: 40px 24px; }
+  .auth-left-content { padding: 0; max-width: 100%; }
+  .auth-left-title { font-size: 26px; }
+  .auth-features { display: none; }
+}
+
+/* ══════════════════════════════════════
+   VAULT LOCK SCREEN
+   ══════════════════════════════════════ */
+
+.vault-lock-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 420px;
+  padding: 60px 40px;
+  text-align: center;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  background: var(--bg-card);
+  position: relative;
+  overflow: hidden;
+}
+
+.vault-lock-screen::before {
+  content: '';
+  position: absolute;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(99,102,241,0.06) 0%, transparent 70%);
+  top: -150px;
+  left: 50%;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.vault-lock-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-xl);
+  background: var(--accent-indigo-glow);
+  border: 1px solid rgba(99,102,241,0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 20px;
+  position: relative;
+  animation: glow 3s ease infinite;
+}
+
+.vault-lock-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 16px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+
 
 /* ══════════════════════════════════════
    SCROLLBAR

@@ -258,9 +258,21 @@ export default function VercelHub() {
                 <h2 className="modal-title">Connect Vercel Account</h2>
                 <button className="btn btn-ghost btn-icon" onClick={() => setShowConnect(false)}><X size={18} /></button>
               </div>
-              <p style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 20 }}>
-                Get your token from <a href="https://vercel.com/account/tokens" target="_blank" rel="noreferrer">Vercel Settings → Tokens</a>
-              </p>
+
+              {/* Token How-To Guide */}
+              <div style={{ background: 'var(--accent-indigo-glow)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: 'var(--radius-md)', padding: '14px 16px', marginBottom: 20 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--accent-indigo)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>🔑</span> How to get your Vercel Token
+                </div>
+                <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: 'var(--text-muted)', lineHeight: 2.2 }}>
+                  <li>Go to <a href="https://vercel.com/account/tokens" target="_blank" rel="noreferrer" style={{ color: 'var(--accent-indigo)' }}>vercel.com/account/tokens</a></li>
+                  <li>Click <strong style={{ color: 'var(--text-secondary)' }}>Create Token</strong></li>
+                  <li>Give it a name (e.g. "Cloud Command") and set <strong style={{ color: 'var(--text-secondary)' }}>Full Account</strong> scope</li>
+                  <li>Copy the token — <strong style={{ color: 'var(--accent-rose)' }}>it won't be shown again</strong></li>
+                  <li>Paste it below</li>
+                </ol>
+              </div>
+
               <form onSubmit={handleConnect} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <div className="form-group">
                   <label className="form-label">Account Label</label>
