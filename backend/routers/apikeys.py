@@ -128,6 +128,7 @@ async def create_key(
         user_id=user.id,
         name=req.name,
         provider=req.provider.lower(),
+        category=req.category,
         encrypted_key=encrypt_value(req.key_value),
         masked_key=masked,
         status=status_str,

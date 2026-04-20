@@ -34,12 +34,14 @@ class UserResponse(BaseModel):
 class MonitorCreate(BaseModel):
     url: str
     name: str
+    category: Optional[str] = None
     interval_seconds: int = 60
 
 class MonitorResponse(BaseModel):
     id: int
     url: str
     name: str
+    category: Optional[str] = None
     interval_seconds: int
     status: str
     last_checked: Optional[datetime] = None
@@ -65,12 +67,14 @@ class MonitorLogResponse(BaseModel):
 class ApiKeyCreate(BaseModel):
     name: str
     provider: str
+    category: Optional[str] = None
     key_value: str  # plaintext, will be encrypted server-side
 
 class ApiKeyResponse(BaseModel):
     id: int
     name: str
     provider: str
+    category: Optional[str] = None
     masked_key: str
     status: str
     last_checked: datetime
@@ -101,12 +105,14 @@ class ApiKeySummary(BaseModel):
 class PlatformAccountCreate(BaseModel):
     provider: str  # "render" or "vercel"
     account_name: str
+    category: Optional[str] = None
     api_token: str  # plaintext, will be encrypted server-side
 
 class PlatformAccountResponse(BaseModel):
     id: int
     provider: str
     account_name: str
+    category: Optional[str] = None
     is_active: bool
     created_at: datetime
 

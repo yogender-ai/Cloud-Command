@@ -39,6 +39,7 @@ def create_monitor(
         user_id=user.id,
         url=req.url,
         name=req.name,
+        category=req.category,
         interval_seconds=req.interval_seconds,
         status="UP",
     )

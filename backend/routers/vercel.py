@@ -77,6 +77,7 @@ async def connect_account(
         user_id=user.id,
         provider="vercel",
         account_name=req.account_name,
+        category=req.category,
         encrypted_token=encrypt_value(req.api_token),
     )
     db.add(account)

@@ -3,13 +3,35 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Globe, CheckCircle2, XCircle, Trash2, Clock, ChevronRight,
   Download, Activity, X, Shield, Code, Copy, Check, AlertTriangle,
-  ExternalLink, Server, Lock
+  ExternalLink, Server, Lock, Tag, Filter
 } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer, YAxis, Tooltip, XAxis, CartesianGrid, BarChart, Bar } from 'recharts';
 import { toast } from 'sonner';
 import { getMonitors, addMonitor, deleteMonitor, getMonitorLogs, exportMonitorCSV, inspectMonitor, getMonitorAnalytics } from '../api';
 
 const BACKEND_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '').replace(/\/api$/, '') || 'https://cloud-command.onrender.com';
+
+const MONITOR_CATEGORIES = ['Production', 'Staging', 'Development', 'Client', 'Personal', 'AI', 'Other'];
+
+const CATEGORY_COLORS = {
+  Production: { bg: 'rgba(16,185,129,0.12)', color: '#10b981', border: 'rgba(16,185,129,0.25)' },
+  Staging:    { bg: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: 'rgba(245,158,11,0.25)' },
+  Development:{ bg: 'rgba(99,102,241,0.12)', color: '#6366f1', border: 'rgba(99,102,241,0.25)' },
+  Client:     { bg: 'rgba(168,85,247,0.12)', color: '#a855f7', border: 'rgba(168,85,247,0.25)' },
+  Personal:   { bg: 'rgba(6,182,212,0.12)',  color: '#06b6d4', border: 'rgba(6,182,212,0.25)' },
+  AI:         { bg: 'rgba(244,63,94,0.12)',  color: '#f43f5e', border: 'rgba(244,63,94,0.25)' },
+  Other:      { bg: 'rgba(100,100,130,0.1)', color: '#888',    border: 'rgba(100,100,130,0.2)' },
+};
+
+function CategoryBadge({ category }) {
+  if (!category) return null;
+  const c = CATEGORY_COLORS[category] || CATEGORY_COLORS.Other;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 99, fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', background: c.bg, color: c.color, border: `1px solid ${c.border}` }}>
+      <Tag size={9} /> {category}
+    </span>
+  );
+}
 
 function formatAgo(dateStr) {
   if (!dateStr) return 'never';
@@ -41,19 +63,27 @@ function MonitorCard({ monitor, onDelete, onClick }) {
   const [logs, setLogs] = useState([]);
   useEffect(() => {
     getMonitorLogs(monitor.id).then(d => setLogs(d.reverse())).catch(() => {});
+    const interval = setInterval(() => {
+      getMonitorLogs(monitor.id).then(d => setLogs(d.reverse())).catch(() => {});
+    }, 15000);
+    return () => clearInterval(interval);
   }, [monitor.id]);
+
   const isUp = monitor.status === 'UP';
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
       className="card card-interactive" onClick={() => onClick(monitor, logs)} style={{ display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
-        <div>
-          <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>{monitor.name}</h3>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            <Globe size={12} /> {monitor.url}
-          </p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 2 }}>{monitor.name}</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>
+              <Globe size={12} /> {monitor.url}
+            </p>
+            <CategoryBadge category={monitor.category} />
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
           <span className={`badge ${isUp ? 'badge-up badge-live' : 'badge-down'}`}>
             {isUp ? <CheckCircle2 size={10} /> : <XCircle size={10} />} {monitor.status}
           </span>
@@ -134,12 +164,12 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
       <motion.div className="modal-panel modal-panel-xl" initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }} onClick={e => e.stopPropagation()} style={{ maxHeight: '90vh', overflowY: 'auto' }}>
 
-        {/* Header */}
         <div className="modal-header">
           <div>
             <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               {monitor.name}
               <span className={`badge ${isUp ? 'badge-up' : 'badge-down'}`}>{monitor.status}</span>
+              <CategoryBadge category={monitor.category} />
             </h2>
             <a href={monitor.url} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
               <Globe size={14} /> {monitor.url}
@@ -154,7 +184,6 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
           </div>
         </div>
 
-        {/* Stat tiles */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
           {[
             { label: 'Status', value: monitor.status, color: isUp ? 'var(--accent-emerald)' : 'var(--accent-rose)' },
@@ -169,7 +198,6 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
           ))}
         </div>
 
-        {/* Tabs */}
         <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--border)', paddingBottom: 0 }}>
           {tabs.map(({ id, label, icon: Icon }) => (
             <button key={id} onClick={() => setActiveTab(id)} style={{
@@ -184,7 +212,6 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
           ))}
         </div>
 
-        {/* Tab: Uptime */}
         {activeTab === 'uptime' && (
           <>
             <div className="chart-container" style={{ marginBottom: 24 }}>
@@ -226,7 +253,6 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
           </>
         )}
 
-        {/* Tab: Inspect */}
         {activeTab === 'inspect' && (
           <div>
             {inspecting ? (
@@ -238,7 +264,6 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
               <div style={{ padding: 24, textAlign: 'center', color: 'var(--accent-rose)' }}><AlertTriangle size={24} style={{ marginBottom: 8 }} /><p>{inspect.error}</p></div>
             ) : inspect && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {/* SSL */}
                 <div className="card" style={{ borderColor: inspect.ssl?.valid ? 'rgba(16,185,129,0.3)' : 'rgba(244,63,94,0.3)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                     <Lock size={16} color={inspect.ssl?.valid ? 'var(--accent-emerald)' : 'var(--accent-rose)'} />
@@ -259,8 +284,6 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
                     </div>
                   )}
                 </div>
-
-                {/* HTTP headers */}
                 <div className="card">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
                     <Server size={16} color="var(--accent-indigo)" />
@@ -280,8 +303,6 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
                     </div>
                   )}
                 </div>
-
-                {/* Redirects */}
                 {inspect.redirect_chain?.length > 0 && (
                   <div className="card">
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
@@ -300,10 +321,8 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
           </div>
         )}
 
-        {/* Tab: Visitor Tracking */}
         {activeTab === 'tracking' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {/* Embed snippet */}
             <div className="card" style={{ borderColor: 'rgba(99,102,241,0.3)' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -315,44 +334,29 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
               <pre style={{ background: 'rgba(0,0,0,0.4)', borderRadius: 10, padding: '14px 16px', fontFamily: 'var(--font-mono)', fontSize: 12, color: '#a0a0c8', overflow: 'auto', margin: 0, lineHeight: 1.7 }}>
                 {trackingSnippet}
               </pre>
-              <div style={{ marginTop: 14, padding: '12px 14px', background: 'var(--accent-indigo-glow)', borderRadius: 8, border: '1px solid rgba(99,102,241,0.2)' }}>
-                <ol style={{ margin: 0, paddingLeft: 18, fontSize: 12, color: 'var(--text-muted)', lineHeight: 2 }}>
-                  <li>Copy the snippet above</li>
-                  <li>Paste it inside the <code style={{ color: 'var(--accent-indigo)', background: 'rgba(99,102,241,0.1)', padding: '1px 5px', borderRadius: 4 }}>&lt;head&gt;</code> tag of your website</li>
-                  <li>Every page visit will now be counted anonymously here</li>
-                  <li><strong style={{ color: 'var(--text-secondary)' }}>No cookies, no personal data.</strong> Just a counter.</li>
-                </ol>
-              </div>
             </div>
-
-            {/* Visit charts */}
             {!analytics ? (
               <div style={{ display: 'flex', justifyContent: 'center', padding: 32 }}><div className="spinner" /></div>
+            ) : analytics.dailyVisits?.length > 0 ? (
+              <div className="chart-container">
+                <h3 className="chart-title">Daily Visitors (Last 30 Days)</h3>
+                <div style={{ height: 180 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={[...analytics.dailyVisits].reverse()}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                      <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="var(--text-muted)" tickFormatter={d => d.slice(5)} />
+                      <YAxis tick={{ fontSize: 10 }} stroke="var(--text-muted)" width={35} />
+                      <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8 }} />
+                      <Bar dataKey="visits" fill="#6366f1" radius={[4,4,0,0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
             ) : (
-              <>
-                {analytics.dailyVisits?.length > 0 && (
-                  <div className="chart-container">
-                    <h3 className="chart-title">Daily Visitors (Last 30 Days)</h3>
-                    <div style={{ height: 180 }}>
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={[...analytics.dailyVisits].reverse()}>
-                          <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                          <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="var(--text-muted)" tickFormatter={d => d.slice(5)} />
-                          <YAxis tick={{ fontSize: 10 }} stroke="var(--text-muted)" width={35} />
-                          <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8 }} />
-                          <Bar dataKey="visits" fill="#6366f1" radius={[4,4,0,0]} />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                )}
-                {analytics.dailyVisits?.length === 0 && (
-                  <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-                    <Globe size={32} style={{ opacity: 0.3, marginBottom: 12 }} />
-                    <p>No visitor data yet. Embed the snippet above on your site to start tracking.</p>
-                  </div>
-                )}
-              </>
+              <div className="card" style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
+                <Globe size={32} style={{ opacity: 0.3, marginBottom: 12 }} />
+                <p>No visitor data yet. Embed the snippet above on your site to start tracking.</p>
+              </div>
             )}
           </div>
         )}
@@ -366,7 +370,9 @@ export default function SiteMonitor() {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [selected, setSelected] = useState(null);
-  const [form, setForm] = useState({ name: '', url: 'https://', interval_seconds: 60 });
+  const [form, setForm] = useState({ name: '', url: 'https://', category: '', interval_seconds: 60 });
+  const [adding, setAdding] = useState(false);
+  const [filterCat, setFilterCat] = useState('All');
   const prevStatuses = useRef({});
 
   const load = () => {
@@ -388,15 +394,17 @@ export default function SiteMonitor() {
 
   const handleAdd = async (e) => {
     e.preventDefault();
+    if (adding) return;
+    setAdding(true);
     try {
       await addMonitor(form);
       setShowAdd(false);
-      setForm({ name: '', url: 'https://', interval_seconds: 60 });
+      setForm({ name: '', url: 'https://', category: '', interval_seconds: 60 });
       load();
       toast.success('Monitor deployed');
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to add monitor');
-    }
+    } finally { setAdding(false); }
   };
 
   const handleDelete = async (id) => {
@@ -406,6 +414,10 @@ export default function SiteMonitor() {
     if (selected?.monitor?.id === id) setSelected(null);
     toast.success('Monitor removed');
   };
+
+  // Derived: unique categories + filtered list
+  const categories = ['All', ...Array.from(new Set(monitors.map(m => m.category).filter(Boolean)))];
+  const filtered = filterCat === 'All' ? monitors : monitors.filter(m => m.category === filterCat);
 
   if (loading) return <div className="page-container"><div className="loading-screen"><div className="spinner" /><p>Loading monitors...</p></div></div>;
 
@@ -419,17 +431,33 @@ export default function SiteMonitor() {
         <button className="btn btn-primary" onClick={() => setShowAdd(true)}><Plus size={16} /> Add Monitor</button>
       </div>
 
-      {monitors.length === 0 ? (
+      {/* Category filter bar */}
+      {categories.length > 1 && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Filter size={14} color="var(--text-muted)" />
+          {categories.map(cat => (
+            <button key={cat} onClick={() => setFilterCat(cat)} style={{
+              padding: '5px 14px', borderRadius: 99, fontSize: 12, fontWeight: 600,
+              cursor: 'pointer', border: '1px solid', transition: 'all 0.15s',
+              background: filterCat === cat ? 'var(--accent-indigo-glow)' : 'transparent',
+              borderColor: filterCat === cat ? 'rgba(99,102,241,0.4)' : 'var(--border)',
+              color: filterCat === cat ? 'var(--accent-indigo)' : 'var(--text-muted)',
+            }}>{cat}</button>
+          ))}
+        </div>
+      )}
+
+      {filtered.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon"><Activity size={28} color="var(--accent-indigo)" /></div>
-          <h3>No active monitors</h3>
-          <p>Deploy your first health check to start tracking uptime and latency.</p>
-          <button className="btn btn-primary" onClick={() => setShowAdd(true)}>Add Your First Monitor</button>
+          <h3>{monitors.length === 0 ? 'No active monitors' : `No monitors in "${filterCat}"`}</h3>
+          <p>{monitors.length === 0 ? 'Deploy your first health check to start tracking uptime and latency.' : 'Try a different category filter.'}</p>
+          {monitors.length === 0 && <button className="btn btn-primary" onClick={() => setShowAdd(true)}>Add Your First Monitor</button>}
         </div>
       ) : (
         <div className="grid grid-3">
           <AnimatePresence>
-            {monitors.map(m => (
+            {filtered.map(m => (
               <MonitorCard key={m.id} monitor={m} onDelete={handleDelete} onClick={(mon, logs) => setSelected({ monitor: mon, logs })} />
             ))}
           </AnimatePresence>
@@ -458,6 +486,21 @@ export default function SiteMonitor() {
                   <input required type="url" className="form-input form-input-mono" placeholder="https://api.example.com" value={form.url} onChange={e => setForm({...form, url: e.target.value})} />
                 </div>
                 <div className="form-group">
+                  <label className="form-label">Category <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {MONITOR_CATEGORIES.map(cat => {
+                      const c = CATEGORY_COLORS[cat] || CATEGORY_COLORS.Other;
+                      const active = form.category === cat;
+                      return (
+                        <button key={cat} type="button" onClick={() => setForm({...form, category: active ? '' : cat})}
+                          style={{ padding: '4px 12px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s', border: `1px solid ${active ? c.border : 'var(--border)'}`, background: active ? c.bg : 'transparent', color: active ? c.color : 'var(--text-muted)' }}>
+                          {cat}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="form-group">
                   <label className="form-label">Polling Interval</label>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
                     {[30, 60, 120, 300].map(v => (
@@ -468,7 +511,9 @@ export default function SiteMonitor() {
                     ))}
                   </div>
                 </div>
-                <button type="submit" className="btn btn-primary" style={{ marginTop: 8 }}>Deploy Monitor</button>
+                <button type="submit" className="btn btn-primary" disabled={adding} style={{ marginTop: 8 }}>
+                  {adding ? <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> : 'Deploy Monitor'}
+                </button>
               </form>
             </motion.div>
           </motion.div>

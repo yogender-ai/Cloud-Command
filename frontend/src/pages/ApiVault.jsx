@@ -2,14 +2,35 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, KeyRound, CheckCircle2, XCircle, AlertCircle, RefreshCw,
-  Trash2, Shield, Zap, X, BarChart3, Lock, Mail, ShieldOff
+  Trash2, Shield, Zap, X, BarChart3, Lock, Mail, ShieldOff, Tag, Filter
 } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { toast } from 'sonner';
 import { getApiKeys, addApiKey, deleteApiKey, checkApiKey, getApiKeySummary, getProfile, requestVaultOtp, verifyVaultOtp } from '../api';
 
 const PROVIDERS = ['OpenAI', 'Anthropic', 'Gemini', 'DeepSeek', 'HuggingFace', 'Groq', 'Mistral', 'xAI', 'Cohere', 'Other'];
-const VAULT_LOCK_MS = 15 * 60 * 1000; // 15 minutes
+const KEY_CATEGORIES = ['AI', 'Dev Tools', 'Infrastructure', 'Analytics', 'Data', 'Monitoring', 'Other'];
+const VAULT_LOCK_MS = 15 * 60 * 1000;
+
+const CAT_COLORS = {
+  AI:             { bg: 'rgba(168,85,247,0.12)', color: '#a855f7', border: 'rgba(168,85,247,0.25)' },
+  'Dev Tools':    { bg: 'rgba(99,102,241,0.12)', color: '#6366f1', border: 'rgba(99,102,241,0.25)' },
+  Infrastructure: { bg: 'rgba(6,182,212,0.12)',  color: '#06b6d4', border: 'rgba(6,182,212,0.25)' },
+  Analytics:      { bg: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: 'rgba(245,158,11,0.25)' },
+  Data:           { bg: 'rgba(16,185,129,0.12)', color: '#10b981', border: 'rgba(16,185,129,0.25)' },
+  Monitoring:     { bg: 'rgba(244,63,94,0.12)',  color: '#f43f5e', border: 'rgba(244,63,94,0.25)' },
+  Other:          { bg: 'rgba(100,100,130,0.1)', color: '#888',    border: 'rgba(100,100,130,0.2)' },
+};
+
+function CategoryBadge({ category }) {
+  if (!category) return null;
+  const c = CAT_COLORS[category] || CAT_COLORS.Other;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 99, fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', background: c.bg, color: c.color, border: `1px solid ${c.border}` }}>
+      <Tag size={9} /> {category}
+    </span>
+  );
+}
 
 function StatusBadge({ status }) {
   const s = status.toLowerCase();
@@ -26,22 +47,18 @@ function OtpInput({ value, onChange, length = 6 }) {
 
   const handleKey = (e, idx) => {
     if (e.key === 'Backspace') {
-      const next = [...digits];
-      next[idx] = '';
+      const next = [...digits]; next[idx] = '';
       onChange(next.join(''));
       if (idx > 0) inputs.current[idx - 1]?.focus();
     }
   };
-
   const handleChange = (e, idx) => {
     const val = e.target.value.replace(/\D/, '');
     if (!val) return;
-    const next = [...digits];
-    next[idx] = val[val.length - 1];
+    const next = [...digits]; next[idx] = val[val.length - 1];
     onChange(next.join(''));
     if (idx < length - 1) inputs.current[idx + 1]?.focus();
   };
-
   const handlePaste = (e) => {
     const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, length);
     onChange(pasted.padEnd(length, '').slice(0, length));
@@ -52,23 +69,11 @@ function OtpInput({ value, onChange, length = 6 }) {
   return (
     <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
       {digits.map((d, i) => (
-        <input
-          key={i}
-          ref={el => inputs.current[i] = el}
-          type="text"
-          inputMode="numeric"
-          maxLength={1}
-          value={d}
-          onChange={e => handleChange(e, i)}
-          onKeyDown={e => handleKey(e, i)}
-          onPaste={handlePaste}
-          style={{
-            width: 52, height: 60, textAlign: 'center', fontSize: 24, fontWeight: 800,
-            fontFamily: 'var(--font-mono)', background: 'var(--bg-input)', border: `2px solid ${d ? 'var(--accent-indigo)' : 'var(--border)'}`,
-            borderRadius: 12, color: 'var(--text-primary)', outline: 'none',
-            transition: 'border-color 0.2s',
-          }}
-        />
+        <input key={i} ref={el => inputs.current[i] = el} type="text" inputMode="numeric" maxLength={1} value={d}
+          onChange={e => handleChange(e, i)} onKeyDown={e => handleKey(e, i)} onPaste={handlePaste}
+          style={{ width: 52, height: 60, textAlign: 'center', fontSize: 24, fontWeight: 800, fontFamily: 'var(--font-mono)',
+            background: 'var(--bg-input)', border: `2px solid ${d ? 'var(--accent-indigo)' : 'var(--border)'}`,
+            borderRadius: 12, color: 'var(--text-primary)', outline: 'none', transition: 'border-color 0.2s' }} />
       ))}
     </div>
   );
@@ -81,8 +86,7 @@ function Countdown({ seconds, onExpire }) {
     const t = setTimeout(() => setLeft(l => l - 1), 1000);
     return () => clearTimeout(t);
   }, [left]);
-  const m = Math.floor(left / 60);
-  const s = left % 60;
+  const m = Math.floor(left / 60), s = left % 60;
   return <span style={{ fontFamily: 'var(--font-mono)', color: left < 60 ? 'var(--accent-rose)' : 'var(--text-muted)' }}>{m}:{String(s).padStart(2, '0')}</span>;
 }
 
@@ -92,17 +96,17 @@ export default function ApiVault() {
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
-  const [form, setForm] = useState({ name: '', provider: 'OpenAI', key_value: '' });
+  const [form, setForm] = useState({ name: '', provider: 'OpenAI', category: '', key_value: '' });
   const [adding, setAdding] = useState(false);
-  const [vaultState, setVaultState] = useState('locked'); // locked | sending | otp_sent | unlocked | no_email
+  const [vaultState, setVaultState] = useState('locked');
   const [otpCode, setOtpCode] = useState('');
   const [otpError, setOtpError] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [sending, setSending] = useState(false);
+  const [filterCat, setFilterCat] = useState('All');
   const lockTimerRef = useRef(null);
 
   useEffect(() => {
-    // Load profile to check notification_email
     getProfile().then(p => {
       setProfile(p);
       if (!p.notification_email) setVaultState('no_email');
@@ -113,18 +117,15 @@ export default function ApiVault() {
   const loadVaultData = async () => {
     try {
       const [k, s] = await Promise.all([getApiKeys(), getApiKeySummary()]);
-      setKeys(k);
-      setSummary(s);
+      setKeys(k); setSummary(s);
     } catch {} finally { setLoading(false); }
   };
 
   const handleSendOtp = async () => {
-    setSending(true);
-    setOtpError('');
+    setSending(true); setOtpError('');
     try {
       await requestVaultOtp();
-      setVaultState('otp_sent');
-      setOtpCode('');
+      setVaultState('otp_sent'); setOtpCode('');
       toast.success('OTP sent to your verified email');
     } catch (err) {
       const msg = err.response?.data?.detail || 'Failed to send OTP';
@@ -135,20 +136,15 @@ export default function ApiVault() {
 
   const handleVerifyOtp = async () => {
     if (otpCode.length < 6) return;
-    setVerifying(true);
-    setOtpError('');
+    setVerifying(true); setOtpError('');
     try {
       await verifyVaultOtp(otpCode);
-      setVaultState('unlocked');
-      setOtpCode('');
+      setVaultState('unlocked'); setOtpCode('');
       loadVaultData();
-      // Auto-lock after 15 min
       if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
       lockTimerRef.current = setTimeout(() => {
-        setVaultState('locked');
-        setKeys([]);
-        setSummary(null);
-        toast.info('Vault locked after 15 minutes of inactivity');
+        setVaultState('locked'); setKeys([]); setSummary(null);
+        toast.info('Vault locked after 15 minutes');
       }, VAULT_LOCK_MS);
       toast.success('Vault unlocked');
     } catch (err) {
@@ -162,7 +158,7 @@ export default function ApiVault() {
     try {
       await addApiKey(form);
       setShowAdd(false);
-      setForm({ name: '', provider: 'OpenAI', key_value: '' });
+      setForm({ name: '', provider: 'OpenAI', category: '', key_value: '' });
       loadVaultData();
       toast.success('API key added & validated');
     } catch (err) {
@@ -172,9 +168,7 @@ export default function ApiVault() {
 
   const handleDelete = async (id) => {
     if (!confirm('Delete this API key?')) return;
-    await deleteApiKey(id);
-    loadVaultData();
-    toast.success('Key deleted');
+    await deleteApiKey(id); loadVaultData(); toast.success('Key deleted');
   };
 
   const handleCheck = async (id) => {
@@ -184,32 +178,24 @@ export default function ApiVault() {
 
   const handleCheckAll = async () => {
     await Promise.all(keys.map(k => checkApiKey(k.id).catch(() => null)));
-    loadVaultData();
-    toast.success('All keys refreshed');
+    loadVaultData(); toast.success('All keys refreshed');
   };
 
-  // ── LOCKED STATES ──
-  if (vaultState === 'no_email') {
-    return (
-      <div className="page-container">
-        <div className="page-header">
-          <div><h1 className="page-title">API Vault</h1><p className="page-subtitle">Securely monitor and validate your AI API keys</p></div>
+  if (vaultState === 'no_email') return (
+    <div className="page-container">
+      <div className="page-header"><div><h1 className="page-title">API Vault</h1><p className="page-subtitle">Securely monitor and validate your AI API keys</p></div></div>
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="vault-lock-screen">
+        <div className="vault-lock-icon" style={{ background: 'var(--accent-amber-glow)', border: '1px solid rgba(245,158,11,0.3)' }}>
+          <Mail size={32} color="var(--accent-amber)" />
         </div>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="vault-lock-screen">
-          <div className="vault-lock-icon" style={{ background: 'var(--accent-amber-glow)', border: '1px solid rgba(245,158,11,0.3)' }}>
-            <Mail size={32} color="var(--accent-amber)" />
-          </div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, margin: '0 0 8px' }}>Email Verification Required</h2>
-          <p style={{ color: 'var(--text-muted)', maxWidth: 420, textAlign: 'center', lineHeight: 1.7 }}>
-            You must verify an email address before you can access the API Vault. This protects your keys with OTP authentication.
-          </p>
-          <a href="/settings" className="btn btn-primary" style={{ marginTop: 8 }}>
-            <Mail size={15} /> Verify Email in Settings
-          </a>
-        </motion.div>
-      </div>
-    );
-  }
+        <h2 style={{ fontSize: 22, fontWeight: 700, margin: '0 0 8px' }}>Email Verification Required</h2>
+        <p style={{ color: 'var(--text-muted)', maxWidth: 420, textAlign: 'center', lineHeight: 1.7 }}>
+          You must verify an email address before you can access the API Vault.
+        </p>
+        <a href="/settings" className="btn btn-primary" style={{ marginTop: 8 }}><Mail size={15} /> Verify Email in Settings</a>
+      </motion.div>
+    </div>
+  );
 
   if (vaultState === 'locked' || vaultState === 'sending') {
     const maskedEmail = profile?.notification_email
@@ -217,62 +203,52 @@ export default function ApiVault() {
       : 'your verified email';
     return (
       <div className="page-container">
-        <div className="page-header">
-          <div><h1 className="page-title">API Vault</h1><p className="page-subtitle">Securely monitor and validate your AI API keys</p></div>
-        </div>
+        <div className="page-header"><div><h1 className="page-title">API Vault</h1><p className="page-subtitle">Securely monitor and validate your AI API keys</p></div></div>
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="vault-lock-screen">
-          <div className="vault-lock-icon">
-            <Lock size={32} color="var(--accent-indigo)" />
-          </div>
+          <div className="vault-lock-icon"><Lock size={32} color="var(--accent-indigo)" /></div>
           <h2 style={{ fontSize: 22, fontWeight: 700, margin: '0 0 8px' }}>API Vault is Protected</h2>
           <p style={{ color: 'var(--text-muted)', maxWidth: 420, textAlign: 'center', lineHeight: 1.7 }}>
-            For your security, accessing the API Vault requires email verification. We'll send a one-time code to <strong style={{ color: 'var(--text-secondary)' }}>{maskedEmail}</strong>.
+            For your security, access requires email verification. We'll send a one-time code to <strong style={{ color: 'var(--text-secondary)' }}>{maskedEmail}</strong>.
           </p>
           <button className="btn btn-primary" onClick={handleSendOtp} disabled={sending} style={{ marginTop: 8 }}>
             {sending ? <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> : <><Shield size={16} /> Send OTP to Unlock</>}
           </button>
-          <div className="vault-lock-info">
-            <ShieldOff size={13} style={{ opacity: 0.5 }} />
-            <span>Vault auto-locks after 15 minutes</span>
-          </div>
+          <div className="vault-lock-info"><ShieldOff size={13} style={{ opacity: 0.5 }} /><span>Vault auto-locks after 15 minutes</span></div>
         </motion.div>
       </div>
     );
   }
 
-  if (vaultState === 'otp_sent') {
-    return (
-      <div className="page-container">
-        <div className="page-header">
-          <div><h1 className="page-title">API Vault</h1><p className="page-subtitle">Enter the code sent to your email</p></div>
+  if (vaultState === 'otp_sent') return (
+    <div className="page-container">
+      <div className="page-header"><div><h1 className="page-title">API Vault</h1><p className="page-subtitle">Enter the code sent to your email</p></div></div>
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="vault-lock-screen">
+        <div className="vault-lock-icon" style={{ background: 'var(--accent-emerald-glow)', border: '1px solid rgba(16,185,129,0.3)' }}>
+          <Mail size={32} color="var(--accent-emerald)" />
         </div>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="vault-lock-screen">
-          <div className="vault-lock-icon" style={{ background: 'var(--accent-emerald-glow)', border: '1px solid rgba(16,185,129,0.3)' }}>
-            <Mail size={32} color="var(--accent-emerald)" />
-          </div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, margin: '0 0 4px' }}>Enter Your Code</h2>
-          <p style={{ color: 'var(--text-muted)', marginBottom: 28, textAlign: 'center' }}>
-            A 6-digit code was sent to your verified email. Expires in{' '}
-            <Countdown seconds={600} onExpire={() => { setVaultState('locked'); toast.error('OTP expired'); }} />
-          </p>
-          <OtpInput value={otpCode} onChange={setOtpCode} />
-          {otpError && <p style={{ color: 'var(--accent-rose)', fontSize: 13, marginTop: 12 }}>{otpError}</p>}
-          <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-            <button className="btn btn-secondary" onClick={() => setVaultState('locked')}>Cancel</button>
-            <button className="btn btn-primary" onClick={handleVerifyOtp} disabled={verifying || otpCode.length < 6}>
-              {verifying ? <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> : <><Shield size={15} /> Unlock Vault</>}
-            </button>
-          </div>
-          <button onClick={handleSendOtp} style={{ background: 'none', border: 'none', color: 'var(--accent-indigo)', cursor: 'pointer', fontSize: 13, marginTop: 16 }}>
-            Resend code
+        <h2 style={{ fontSize: 22, fontWeight: 700, margin: '0 0 4px' }}>Enter Your Code</h2>
+        <p style={{ color: 'var(--text-muted)', marginBottom: 28, textAlign: 'center' }}>
+          A 6-digit code was sent to your verified email. Expires in{' '}
+          <Countdown seconds={600} onExpire={() => { setVaultState('locked'); toast.error('OTP expired'); }} />
+        </p>
+        <OtpInput value={otpCode} onChange={setOtpCode} />
+        {otpError && <p style={{ color: 'var(--accent-rose)', fontSize: 13, marginTop: 12 }}>{otpError}</p>}
+        <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
+          <button className="btn btn-secondary" onClick={() => setVaultState('locked')}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleVerifyOtp} disabled={verifying || otpCode.length < 6}>
+            {verifying ? <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> : <><Shield size={15} /> Unlock Vault</>}
           </button>
-        </motion.div>
-      </div>
-    );
-  }
+        </div>
+        <button onClick={handleSendOtp} style={{ background: 'none', border: 'none', color: 'var(--accent-indigo)', cursor: 'pointer', fontSize: 13, marginTop: 16 }}>Resend code</button>
+      </motion.div>
+    </div>
+  );
 
-  // ── UNLOCKED VAULT ──
   if (loading) return <div className="page-container"><div className="loading-screen"><div className="spinner" /><p>Loading API keys...</p></div></div>;
+
+  // Category filter
+  const categories = ['All', ...Array.from(new Set(keys.map(k => k.category).filter(Boolean)))];
+  const filtered = filterCat === 'All' ? keys : keys.filter(k => k.category === filterCat);
 
   return (
     <div className="page-container">
@@ -280,32 +256,16 @@ export default function ApiVault() {
         <div>
           <h1 className="page-title">API Vault</h1>
           <p className="page-subtitle" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Shield size={13} color="var(--accent-emerald)" />
-            Vault unlocked · auto-locks in 15 min
+            <Shield size={13} color="var(--accent-emerald)" /> Vault unlocked · auto-locks in 15 min
           </p>
         </div>
         <div className="header-actions">
-          {keys.length > 0 && (
-            <button className="btn btn-secondary" onClick={handleCheckAll}><RefreshCw size={14} /> Refresh All</button>
-          )}
-          {profile?.notification_email ? (
-            <button className="btn btn-primary" onClick={() => setShowAdd(true)}><Plus size={16} /> Add Key</button>
-          ) : (
-            <button className="btn btn-secondary" disabled title="Verify email first"><Plus size={16} /> Add Key</button>
-          )}
+          {keys.length > 0 && <button className="btn btn-secondary" onClick={handleCheckAll}><RefreshCw size={14} /> Refresh All</button>}
+          {profile?.notification_email
+            ? <button className="btn btn-primary" onClick={() => setShowAdd(true)}><Plus size={16} /> Add Key</button>
+            : <button className="btn btn-secondary" disabled title="Verify email first"><Plus size={16} /> Add Key</button>}
         </div>
       </div>
-
-      {!profile?.notification_email && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="card"
-          style={{ marginBottom: 20, background: 'var(--accent-amber-glow)', border: '1px solid rgba(245,158,11,0.3)', display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px' }}>
-          <AlertCircle size={18} color="var(--accent-amber)" style={{ flexShrink: 0 }} />
-          <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
-            <strong>Verify your email</strong> in Settings to enable adding API keys and OTP protection.{' '}
-            <a href="/settings" style={{ color: 'var(--accent-amber)' }}>Go to Settings →</a>
-          </p>
-        </motion.div>
-      )}
 
       {/* Stats */}
       {summary && (
@@ -349,27 +309,46 @@ export default function ApiVault() {
         </div>
       )}
 
+      {/* Category filter */}
+      {categories.length > 1 && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Filter size={14} color="var(--text-muted)" />
+          {categories.map(cat => (
+            <button key={cat} onClick={() => setFilterCat(cat)} style={{
+              padding: '5px 14px', borderRadius: 99, fontSize: 12, fontWeight: 600,
+              cursor: 'pointer', border: '1px solid', transition: 'all 0.15s',
+              background: filterCat === cat ? 'var(--accent-indigo-glow)' : 'transparent',
+              borderColor: filterCat === cat ? 'rgba(99,102,241,0.4)' : 'var(--border)',
+              color: filterCat === cat ? 'var(--accent-indigo)' : 'var(--text-muted)',
+            }}>{cat}</button>
+          ))}
+        </div>
+      )}
+
       {/* Key Cards */}
-      {keys.length === 0 ? (
+      {filtered.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon"><KeyRound size={28} color="var(--accent-indigo)" /></div>
-          <h3>No API Keys</h3>
-          <p>Add your first API key to start monitoring its status and usage.</p>
-          {profile?.notification_email
+          <h3>{keys.length === 0 ? 'No API Keys' : `No keys in "${filterCat}"`}</h3>
+          <p>{keys.length === 0 ? 'Add your first API key to start monitoring its status and usage.' : 'Try a different category filter.'}</p>
+          {keys.length === 0 && (profile?.notification_email
             ? <button className="btn btn-primary" onClick={() => setShowAdd(true)}>Add Your First Key</button>
             : <a href="/settings" className="btn btn-secondary">Verify Email First</a>
-          }
+          )}
         </div>
       ) : (
         <div className="grid grid-3">
           <AnimatePresence>
-            {keys.map(key => (
+            {filtered.map(key => (
               <motion.div key={key.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
                 className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
                     <h3 style={{ fontSize: 16, fontWeight: 700 }}>{key.name}</h3>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2 }}>{key.provider}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{key.provider}</div>
+                      <CategoryBadge category={key.category} />
+                    </div>
                   </div>
                   <StatusBadge status={key.status} />
                 </div>
@@ -408,6 +387,21 @@ export default function ApiVault() {
                   <select className="form-select" value={form.provider} onChange={e => setForm({...form, provider: e.target.value})}>
                     {PROVIDERS.map(p => <option key={p} value={p}>{p}</option>)}
                   </select>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Category <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {KEY_CATEGORIES.map(cat => {
+                      const c = CAT_COLORS[cat] || CAT_COLORS.Other;
+                      const active = form.category === cat;
+                      return (
+                        <button key={cat} type="button" onClick={() => setForm({...form, category: active ? '' : cat})}
+                          style={{ padding: '4px 12px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s', border: `1px solid ${active ? c.border : 'var(--border)'}`, background: active ? c.bg : 'transparent', color: active ? c.color : 'var(--text-muted)' }}>
+                          {cat}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">API Key</label>

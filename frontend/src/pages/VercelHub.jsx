@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Triangle, Rocket, ExternalLink, GitBranch, X, Trash2,
-  Eye, EyeOff, Variable, Globe, CheckCircle2
+  Variable, Globe, CheckCircle2, ShieldOff, Tag, Filter
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -10,19 +10,37 @@ import {
   getVercelProjects, getVercelDeployments, redeployVercelProject, getVercelEnvVars
 } from '../api';
 
+const ACCOUNT_CATEGORIES = ['Production', 'Staging', 'Client', 'Personal', 'Other'];
+const CAT_COLORS = {
+  Production: { bg: 'rgba(16,185,129,0.12)', color: '#10b981', border: 'rgba(16,185,129,0.25)' },
+  Staging:    { bg: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: 'rgba(245,158,11,0.25)' },
+  Client:     { bg: 'rgba(168,85,247,0.12)', color: '#a855f7', border: 'rgba(168,85,247,0.25)' },
+  Personal:   { bg: 'rgba(6,182,212,0.12)',  color: '#06b6d4', border: 'rgba(6,182,212,0.25)' },
+  Other:      { bg: 'rgba(100,100,130,0.1)', color: '#888',    border: 'rgba(100,100,130,0.2)' },
+};
+function CategoryBadge({ category }) {
+  if (!category) return null;
+  const c = CAT_COLORS[category] || CAT_COLORS.Other;
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 99, fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', background: c.bg, color: c.color, border: `1px solid ${c.border}` }}>
+      <Tag size={9} /> {category}
+    </span>
+  );
+}
+
 export default function VercelHub() {
   const [accounts, setAccounts] = useState([]);
   const [activeAcct, setActiveAcct] = useState(null);
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showConnect, setShowConnect] = useState(false);
-  const [connectForm, setConnectForm] = useState({ account_name: '', api_token: '' });
+  const [connectForm, setConnectForm] = useState({ account_name: '', api_token: '', category: '' });
+  const [filterCat, setFilterCat] = useState('All');
   const [connecting, setConnecting] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
   const [deployments, setDeployments] = useState([]);
   const [envVars, setEnvVars] = useState([]);
   const [showEnv, setShowEnv] = useState(false);
-  const [envRevealed, setEnvRevealed] = useState({});
 
   const loadAccounts = async () => {
     try {
@@ -48,7 +66,7 @@ export default function VercelHub() {
     try {
       const acct = await connectVercelAccount(connectForm);
       setShowConnect(false);
-      setConnectForm({ account_name: '', api_token: '' });
+      setConnectForm({ account_name: '', api_token: '', category: '' });
       await loadAccounts();
       setActiveAcct(acct);
       toast.success('Vercel account connected');
@@ -115,8 +133,9 @@ export default function VercelHub() {
           <div className="account-tabs">
             {accounts.map(a => (
               <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <button className={`account-tab ${activeAcct?.id === a.id ? 'active' : ''}`} onClick={() => setActiveAcct(a)}>
-                  <Triangle size={12} fill="currentColor" /> {a.account_name}
+                <button className={`account-tab ${activeAcct?.id === a.id ? 'active' : ''}`} onClick={() => setActiveAcct(a)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', height: 'auto', padding: '8px 14px', gap: 3 }}>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Triangle size={12} fill="currentColor" /> {a.account_name}</span>
+                  {a.category && <CategoryBadge category={a.category} />}
                 </button>
                 <button className="btn btn-ghost btn-icon" style={{ width: 28, height: 28 }} onClick={() => handleDisconnect(a.id)}>
                   <Trash2 size={12} color="var(--accent-rose)" />
@@ -218,29 +237,28 @@ export default function VercelHub() {
       {/* Env Vars Modal */}
       <AnimatePresence>
         {showEnv && (
-          <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => { setShowEnv(false); setEnvRevealed({}); }}>
+          <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowEnv(false)}>
             <motion.div className="modal-panel modal-panel-lg" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} onClick={e => e.stopPropagation()}>
               <div className="modal-header">
-                <h2 className="modal-title">Environment Variables</h2>
-                <button className="btn btn-ghost btn-icon" onClick={() => { setShowEnv(false); setEnvRevealed({}); }}><X size={18} /></button>
+                <div>
+                  <h2 className="modal-title">Environment Variables</h2>
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <ShieldOff size={12} /> Values are hidden for security — you can only view names
+                  </p>
+                </div>
+                <button className="btn btn-ghost btn-icon" onClick={() => setShowEnv(false)}><X size={18} /></button>
               </div>
               <div className="table-wrapper">
                 <table className="table">
-                  <thead><tr><th>Key</th><th>Value</th><th>Target</th></tr></thead>
+                  <thead><tr><th>Variable Name</th><th>Environment</th></tr></thead>
                   <tbody>
                     {envVars.map((ev, i) => (
                       <tr key={i}>
-                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12, fontWeight: 600 }}>{ev.key}</td>
-                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span>{envRevealed[i] ? (ev.value || ev.decrypted || '(encrypted)') : '••••••••'}</span>
-                          <button className="btn btn-ghost btn-icon" style={{ width: 24, height: 24 }} onClick={() => setEnvRevealed(p => ({...p, [i]: !p[i]}))}>
-                            {envRevealed[i] ? <EyeOff size={12} /> : <Eye size={12} />}
-                          </button>
-                        </td>
+                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: 13, fontWeight: 600, color: 'var(--accent-indigo)' }}>{ev.key}</td>
                         <td style={{ fontSize: 12 }}>{(ev.target || []).join(', ')}</td>
                       </tr>
                     ))}
-                    {envVars.length === 0 && <tr><td colSpan="3" style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>No env vars found</td></tr>}
+                    {envVars.length === 0 && <tr><td colSpan="2" style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>No env vars found</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -277,6 +295,23 @@ export default function VercelHub() {
                 <div className="form-group">
                   <label className="form-label">Account Label</label>
                   <input required className="form-input" placeholder="My Vercel Account" value={connectForm.account_name} onChange={e => setConnectForm({...connectForm, account_name: e.target.value})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Category <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {ACCOUNT_CATEGORIES.map(cat => {
+                      const c = CAT_COLORS[cat] || CAT_COLORS.Other;
+                      const active = connectForm.category === cat;
+                      return (
+                        <button key={cat} type="button" onClick={() => setConnectForm({...connectForm, category: active ? '' : cat})}
+                          style={{ padding: '4px 12px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                            transition: 'all 0.15s', border: `1px solid ${active ? c.border : 'var(--border)'}`,
+                            background: active ? c.bg : 'transparent', color: active ? c.color : 'var(--text-muted)' }}>
+                          {cat}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Vercel Token</label>

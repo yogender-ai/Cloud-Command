@@ -54,6 +54,7 @@ class Monitor(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     url = Column(String(500), nullable=False)
     name = Column(String(255), nullable=False)
+    category = Column(String(100), nullable=True)  # e.g. Production, Staging, Client
     interval_seconds = Column(Integer, default=60)
     status = Column(String(50), default="UP")
     last_checked = Column(DateTime(timezone=True), nullable=True)
@@ -85,6 +86,7 @@ class ApiKey(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(255), nullable=False)  # User's nickname
     provider = Column(String(100), nullable=False)  # openai, anthropic, gemini, etc.
+    category = Column(String(100), nullable=True)  # e.g. AI, Dev Tools, Infrastructure
     encrypted_key = Column(Text, nullable=False)  # Fernet-encrypted
     masked_key = Column(String(100), nullable=False)  # e.g. "sk-...1234"
     status = Column(String(100), default="Unknown")  # Active, Invalid, Suspended
@@ -116,6 +118,7 @@ class PlatformAccount(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     provider = Column(String(50), nullable=False)  # "render" or "vercel"
     account_name = Column(String(255), nullable=False)  # User-given label
+    category = Column(String(100), nullable=True)  # e.g. Production, Client, Personal
     encrypted_token = Column(Text, nullable=False)  # Fernet-encrypted
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), default=utcnow)
