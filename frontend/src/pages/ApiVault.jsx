@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, KeyRound, CheckCircle2, XCircle, AlertCircle, RefreshCw,
-  Trash2, Shield, Zap, X, BarChart3, Lock, Mail, ShieldOff, Filter
+  Trash2, Shield, Zap, X, BarChart3, Lock, Mail, ShieldOff, Filter,
+  ChevronRight, Calculator, Check, Copy
 } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { toast } from 'sonner';
@@ -70,6 +71,55 @@ function Countdown({ seconds, onExpire }) {
   return <span style={{ fontFamily: 'var(--font-mono)', color: left < 60 ? 'var(--accent-rose)' : 'var(--text-muted)' }}>{m}:{String(s).padStart(2, '0')}</span>;
 }
 
+function DetailModal({ apiKey, onClose }) {
+  const isUp = apiKey.status === 'Active';
+  return (
+    <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
+      <motion.div className="modal-panel modal-panel-lg" initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header" style={{ marginBottom: 20 }}>
+          <div>
+            <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              {apiKey.name}
+              <StatusBadge status={apiKey.status} />
+            </h2>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>Provider: {apiKey.provider}</p>
+          </div>
+          <button className="btn btn-ghost btn-icon" onClick={onClose}><X size={18} /></button>
+        </div>
+        
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}>
+          <div className="card" style={{ padding: '16px', textAlign: 'center' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Provider Limits</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent-emerald)' }}>Unknown</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Standard Tier</div>
+          </div>
+          <div className="card" style={{ padding: '16px', textAlign: 'center' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Tokens Used (Est.)</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--accent-purple)' }}>{apiKey.tokens_used.toLocaleString()}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>In current window</div>
+          </div>
+          <div className="card" style={{ padding: '16px', textAlign: 'center' }}>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Last Assessed</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{new Date(apiKey.last_checked).toLocaleTimeString()}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>{new Date(apiKey.last_checked).toLocaleDateString()}</div>
+          </div>
+        </div>
+
+        <div className="chart-container">
+            <h3 className="chart-title"><Calculator size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 8, color: 'var(--accent-indigo)' }} />Token Usage Calculation</h3>
+            <p style={{ color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.6 }}>
+                AI Model providers rarely disclose granular remaining capacity without paid enterprise accounts. Cloud-Command tracks the volumetric output of the prompts routed through this API key locally on the platform, combined with the successful heuristic validation pings.
+            </p>
+            <br/>
+            <p style={{ color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.6 }}>
+                Currently, <strong>{apiKey.tokens_used}</strong> tokens have been successfully consumed via Cloud-Command for this API Key. 
+            </p>
+        </div>
+      </motion.div>
+    </motion.div>
+  );
+}
+
 export default function ApiVault() {
   const [keys, setKeys] = useState([]);
   const [summary, setSummary] = useState(null);
@@ -78,20 +128,23 @@ export default function ApiVault() {
   const [showAdd, setShowAdd] = useState(false);
   const [form, setForm] = useState({ name: '', provider: 'OpenAI', category: '', key_value: '' });
   const [adding, setAdding] = useState(false);
-  const [vaultState, setVaultState] = useState('locked');
+  const [filterCat, setFilterCat] = useState('All');
+  const [selectedKey, setSelectedKey] = useState(null);
+  
+  // OTP Flow States
+  const [requireOtpFor, setRequireOtpFor] = useState(null); // 'add' or { type: 'delete', id }
+  const [otpSent, setOtpSent] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [otpError, setOtpError] = useState('');
   const [verifying, setVerifying] = useState(false);
   const [sending, setSending] = useState(false);
-  const [filterCat, setFilterCat] = useState('All');
+  
+  const [vaultUnlocked, setVaultUnlocked] = useState(false);
   const lockTimerRef = useRef(null);
 
   useEffect(() => {
-    getProfile().then(p => {
-      setProfile(p);
-      if (!p.notification_email) setVaultState('no_email');
-      else setVaultState('locked');
-    }).catch(() => setVaultState('locked'));
+    getProfile().then(p => setProfile(p)).catch(() => {});
+    loadVaultData();
   }, []);
 
   const loadVaultData = async () => {
@@ -101,16 +154,20 @@ export default function ApiVault() {
     } catch {} finally { setLoading(false); }
   };
 
-  const handleSendOtp = async () => {
+  const handleSendOtp = async (action) => {
+    if (!profile?.notification_email) {
+      toast.error('Verify your email in Settings first.');
+      return;
+    }
+    setRequireOtpFor(action);
     setSending(true); setOtpError('');
     try {
       await requestVaultOtp();
-      setVaultState('otp_sent'); setOtpCode('');
-      toast.success('OTP sent to your verified email');
+      setOtpSent(true); setOtpCode('');
+      toast.success('OTP sent to your verified email for authorization');
     } catch (err) {
-      const msg = err.response?.data?.detail || 'Failed to send OTP';
-      if (msg.includes('verified email')) setVaultState('no_email');
-      else toast.error(msg);
+      toast.error(err.response?.data?.detail || 'Failed to send OTP');
+      setRequireOtpFor(null);
     } finally { setSending(false); }
   };
 
@@ -119,17 +176,38 @@ export default function ApiVault() {
     setVerifying(true); setOtpError('');
     try {
       await verifyVaultOtp(otpCode);
-      setVaultState('unlocked'); setOtpCode('');
-      loadVaultData();
+      setVaultUnlocked(true);
+      setOtpSent(false);
+      setOtpCode('');
+      
       if (lockTimerRef.current) clearTimeout(lockTimerRef.current);
       lockTimerRef.current = setTimeout(() => {
-        setVaultState('locked'); setKeys([]); setSummary(null);
-        toast.info('Vault locked after 15 minutes');
+        setVaultUnlocked(false);
+        toast.info('Vault relocked for modifying keys');
       }, VAULT_LOCK_MS);
-      toast.success('Vault unlocked');
+      
+      toast.success('Authorized successfully');
+      
+      // Execute the pending action
+      if (requireOtpFor === 'add') {
+        setShowAdd(true);
+      } else if (requireOtpFor?.type === 'delete') {
+        executeDelete(requireOtpFor.id);
+      }
+      setRequireOtpFor(null);
     } catch (err) {
       setOtpError(err.response?.data?.detail || 'Invalid or expired OTP');
     } finally { setVerifying(false); }
+  };
+
+  const attemptAdd = () => {
+    if (vaultUnlocked) setShowAdd(true);
+    else handleSendOtp('add');
+  };
+
+  const attemptDelete = (id) => {
+    if (vaultUnlocked) executeDelete(id);
+    else handleSendOtp({ type: 'delete', id });
   };
 
   const handleAdd = async (e) => {
@@ -146,12 +224,15 @@ export default function ApiVault() {
     } finally { setAdding(false); }
   };
 
-  const handleDelete = async (id) => {
+  const executeDelete = async (id) => {
     if (!confirm('Delete this API key?')) return;
-    await deleteApiKey(id); loadVaultData(); toast.success('Key deleted');
+    await deleteApiKey(id); 
+    loadVaultData(); 
+    toast.success('Key deleted');
   };
 
-  const handleCheck = async (id) => {
+  const handleCheck = async (e, id) => {
+    e.stopPropagation();
     try { await checkApiKey(id); loadVaultData(); toast.success('Key re-validated'); }
     catch { toast.error('Validation failed'); }
   };
@@ -173,72 +254,7 @@ export default function ApiVault() {
   const categories = ['All', ...allCategories];
   const filtered = filterCat === 'All' ? keys : keys.filter(k => k.category === filterCat);
 
-  if (vaultState === 'no_email') return (
-    <div className="page-container">
-      <div className="page-header"><div><h1 className="page-title">API Vault</h1><p className="page-subtitle">Securely monitor and validate your AI API keys</p></div></div>
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="vault-lock-screen">
-        <div className="vault-lock-icon" style={{ background: 'var(--accent-amber-glow)', border: '1px solid rgba(245,158,11,0.3)' }}>
-          <Mail size={32} color="var(--accent-amber)" />
-        </div>
-        <h2 style={{ fontSize: 22, fontWeight: 700, margin: '0 0 8px' }}>Email Verification Required</h2>
-        <p style={{ color: 'var(--text-muted)', maxWidth: 420, textAlign: 'center', lineHeight: 1.7 }}>
-          You must verify an email address before you can access the API Vault.
-        </p>
-        <a href="/settings" className="btn btn-primary" style={{ marginTop: 8 }}><Mail size={15} /> Verify Email in Settings</a>
-      </motion.div>
-    </div>
-  );
-
-  if (vaultState === 'locked' || vaultState === 'sending') {
-    const maskedEmail = profile?.notification_email
-      ? profile.notification_email.replace(/(.{2})(.*)(?=@)/, (_, a, b) => a + '*'.repeat(b.length))
-      : 'your verified email';
-    return (
-      <div className="page-container">
-        <div className="page-header"><div><h1 className="page-title">API Vault</h1><p className="page-subtitle">Securely monitor and validate your AI API keys</p></div></div>
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="vault-lock-screen">
-          <div className="vault-lock-icon"><Lock size={32} color="var(--accent-indigo)" /></div>
-          <h2 style={{ fontSize: 22, fontWeight: 700, margin: '0 0 8px' }}>API Vault is Protected</h2>
-          <p style={{ color: 'var(--text-muted)', maxWidth: 420, textAlign: 'center', lineHeight: 1.7 }}>
-            For your security, access requires email verification. We'll send a one-time code to <strong style={{ color: 'var(--text-secondary)' }}>{maskedEmail}</strong>.
-          </p>
-          <button className="btn btn-primary" onClick={handleSendOtp} disabled={sending} style={{ marginTop: 8 }}>
-            {sending ? <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> : <><Shield size={16} /> Send OTP to Unlock</>}
-          </button>
-          <div className="vault-lock-info"><ShieldOff size={13} style={{ opacity: 0.5 }} /><span>Vault auto-locks after 15 minutes</span></div>
-        </motion.div>
-      </div>
-    );
-  }
-
-  if (vaultState === 'otp_sent') return (
-    <div className="page-container">
-      <div className="page-header"><div><h1 className="page-title">API Vault</h1><p className="page-subtitle">Enter the code sent to your email</p></div></div>
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="vault-lock-screen">
-        <div className="vault-lock-icon" style={{ background: 'var(--accent-emerald-glow)', border: '1px solid rgba(16,185,129,0.3)' }}>
-          <Mail size={32} color="var(--accent-emerald)" />
-        </div>
-        <h2 style={{ fontSize: 22, fontWeight: 700, margin: '0 0 4px' }}>Enter Your Code</h2>
-        <p style={{ color: 'var(--text-muted)', marginBottom: 28, textAlign: 'center' }}>
-          A 6-digit code was sent to your verified email. Expires in{' '}
-          <Countdown seconds={600} onExpire={() => { setVaultState('locked'); toast.error('OTP expired'); }} />
-        </p>
-        <OtpInput value={otpCode} onChange={setOtpCode} />
-        {otpError && <p style={{ color: 'var(--accent-rose)', fontSize: 13, marginTop: 12 }}>{otpError}</p>}
-        <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-          <button className="btn btn-secondary" onClick={() => setVaultState('locked')}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleVerifyOtp} disabled={verifying || otpCode.length < 6}>
-            {verifying ? <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> : <><Shield size={15} /> Unlock Vault</>}
-          </button>
-        </div>
-        <button onClick={handleSendOtp} style={{ background: 'none', border: 'none', color: 'var(--accent-indigo)', cursor: 'pointer', fontSize: 13, marginTop: 16 }}>Resend code</button>
-      </motion.div>
-    </div>
-  );
-
   if (loading) return <div className="page-container"><div className="loading-screen"><div className="spinner" /><p>Loading API keys...</p></div></div>;
-
-  // Category filter handled earlier
 
   return (
     <div className="page-container">
@@ -246,14 +262,15 @@ export default function ApiVault() {
         <div>
           <h1 className="page-title">API Vault</h1>
           <p className="page-subtitle" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Shield size={13} color="var(--accent-emerald)" /> Vault unlocked · auto-locks in 15 min
+            <Shield size={13} color="var(--accent-emerald)" /> {vaultUnlocked ? "Vault unlocked · Modification authorized" : "Vault secure · Modiciation requires OTP"}
           </p>
         </div>
         <div className="header-actions">
           {keys.length > 0 && <button className="btn btn-secondary" onClick={handleCheckAll}><RefreshCw size={14} /> Refresh All</button>}
-          {profile?.notification_email
-            ? <button className="btn btn-primary" onClick={() => setShowAdd(true)}><Plus size={16} /> Add Key</button>
-            : <button className="btn btn-secondary" disabled title="Verify email first"><Plus size={16} /> Add Key</button>}
+          <button className="btn btn-primary" onClick={attemptAdd} disabled={sending}>
+            {sending && requireOtpFor === 'add' ? <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2, marginRight: 8 }}/>: <Plus size={16} />}
+            Add Key
+          </button>
         </div>
       </div>
 
@@ -291,8 +308,8 @@ export default function ApiVault() {
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                 <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="var(--text-muted)" tickFormatter={d => d.slice(5)} />
                 <YAxis tick={{ fontSize: 11 }} stroke="var(--text-muted)" width={50} />
-                <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10 }} />
-                <Area type="monotone" dataKey="total_tokens" stroke="#a855f7" fill="url(#tokenGrad)" strokeWidth={2.5} name="Tokens" />
+                <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10 }} />
+                <Area activeDot={{ outline: 'none' }} type="monotone" dataKey="total_tokens" stroke="#a855f7" fill="url(#tokenGrad)" strokeWidth={2.5} name="Tokens" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -321,18 +338,14 @@ export default function ApiVault() {
           <div className="empty-state-icon"><KeyRound size={28} color="var(--accent-indigo)" /></div>
           <h3>{keys.length === 0 ? 'No API Keys' : `No keys in "${filterCat}"`}</h3>
           <p>{keys.length === 0 ? 'Add your first API key to start monitoring its status and usage.' : 'Try a different category filter.'}</p>
-          {keys.length === 0 && (profile?.notification_email
-            ? <button className="btn btn-primary" onClick={() => setShowAdd(true)}>Add Your First Key</button>
-            : <a href="/settings" className="btn btn-secondary">Verify Email First</a>
-          )}
         </div>
       ) : (
         <div className="grid grid-3">
           <AnimatePresence>
             {filtered.map(key => (
               <motion.div key={key.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
-                className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                className="card card-interactive" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }} onClick={() => setSelectedKey(key)}>
                   <div>
                     <h3 style={{ fontSize: 16, fontWeight: 700 }}>{key.name}</h3>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2 }}>{key.provider}</div>
@@ -345,14 +358,16 @@ export default function ApiVault() {
                   suggestions={allCategories.filter(c => c !== key.category)}
                   onSave={cat => handleCategoryChange(key.id, cat)}
                 />
-                <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <KeyRound size={13} style={{ opacity: 0.5 }} /> {key.masked_key}
+                <div onClick={() => setSelectedKey(key)} style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <KeyRound size={13} style={{ opacity: 0.5 }} /> ********************
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 'auto' }}>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Checked: {new Date(key.last_checked).toLocaleString()}</div>
                   <div style={{ display: 'flex', gap: 4 }}>
-                    <button className="btn btn-ghost btn-icon" onClick={() => handleCheck(key.id)} title="Re-validate"><RefreshCw size={14} /></button>
-                    <button className="btn btn-ghost btn-icon" onClick={() => handleDelete(key.id)} title="Delete"><Trash2 size={14} color="var(--accent-rose)" /></button>
+                    <button className="btn btn-ghost btn-icon" onClick={(e) => handleCheck(e, key.id)} title="Re-validate"><RefreshCw size={14} /></button>
+                    <button className="btn btn-ghost btn-icon" onClick={(e) => { e.stopPropagation(); attemptDelete(key.id); }} title="Delete">
+                      {sending && requireOtpFor?.id === key.id ? <div className="spinner" style={{width:14,height:14}}/> : <Trash2 size={14} color="var(--accent-rose)" />}
+                    </button>
                   </div>
                 </div>
               </motion.div>
@@ -361,7 +376,37 @@ export default function ApiVault() {
         </div>
       )}
 
-      {/* Add Modal */}
+      <AnimatePresence>
+        {selectedKey && <DetailModal apiKey={selectedKey} onClose={() => setSelectedKey(null)} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {otpSent && (
+          <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => { setOtpSent(false); setRequireOtpFor(null); }}>
+             <motion.div className="modal-panel" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} onClick={e => e.stopPropagation()}>
+               <div className="modal-header">
+                 <h2 className="modal-title">Authorize Action</h2>
+                 <button className="btn btn-ghost btn-icon" onClick={() => { setOtpSent(false); setRequireOtpFor(null); }}><X size={18} /></button>
+               </div>
+               <div style={{ textAlign: 'center', marginBottom: 24 }}>
+                 <div className="vault-lock-icon" style={{ background: 'var(--accent-amber-glow)', border: '1px solid rgba(245,158,11,0.3)', margin: '0 auto 16px', display: 'flex', alignItems: 'center', justifyContent: 'center', width: 64, height: 64, borderRadius: '50%' }}>
+                   <Shield size={32} color="var(--accent-amber)" />
+                 </div>
+                 <p style={{ color: 'var(--text-muted)' }}>
+                   A verification code was sent to your email to perform this action. Expires in{' '}
+                   <Countdown seconds={600} onExpire={() => { setOtpSent(false); toast.error('OTP expired'); }} />
+                 </p>
+               </div>
+               <OtpInput value={otpCode} onChange={setOtpCode} />
+               {otpError && <p style={{ color: 'var(--accent-rose)', fontSize: 13, marginTop: 12, textAlign: 'center' }}>{otpError}</p>}
+               <button className="btn btn-primary" style={{ width: '100%', marginTop: 24 }} onClick={handleVerifyOtp} disabled={verifying || otpCode.length < 6}>
+                 {verifying ? <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> : 'Verify & Execute'}
+               </button>
+             </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <AnimatePresence>
         {showAdd && (
           <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowAdd(false)}>

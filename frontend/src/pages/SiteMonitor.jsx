@@ -87,7 +87,7 @@ function MonitorCard({ monitor, onDelete, onClick, onCategoryChange, allCategori
                 <stop offset="95%" stopColor={isUp ? '#10b981' : '#f43f5e'} stopOpacity={0} />
               </linearGradient>
             </defs>
-            <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12 }} labelStyle={{ display: 'none' }} formatter={(v) => [`${v}ms`, 'Latency']} />
+            <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12 }} labelStyle={{ display: 'none' }} formatter={(v) => [`${v}ms`, 'Latency']} />
             <Area type="monotone" dataKey="latency" stroke={isUp ? '#10b981' : '#f43f5e'} fill={`url(#g-${monitor.id})`} strokeWidth={2} />
           </AreaChart>
         </ResponsiveContainer>
@@ -214,7 +214,7 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                     <XAxis dataKey="created_at" tickFormatter={t => t ? new Date(t).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'}) : ''} stroke="var(--text-muted)" tick={{ fontSize: 11 }} />
                     <YAxis stroke="var(--text-muted)" tick={{ fontSize: 11 }} tickFormatter={v => `${v}ms`} width={50} />
-                    <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10 }}
+                    <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10 }}
                       labelFormatter={l => new Date(l).toLocaleString()} formatter={v => [`${v} ms`, 'Latency']} />
                     <Area type="monotone" dataKey="latency" stroke={isUp ? '#10b981' : '#f43f5e'} fill="url(#colorBig)" strokeWidth={2.5} />
                   </AreaChart>
@@ -332,7 +332,7 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
                       <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
                       <XAxis dataKey="date" tick={{ fontSize: 10 }} stroke="var(--text-muted)" tickFormatter={d => d.slice(5)} />
                       <YAxis tick={{ fontSize: 10 }} stroke="var(--text-muted)" width={35} />
-                      <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8 }} />
+                      <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8 }} />
                       <Bar dataKey="visits" fill="#6366f1" radius={[4,4,0,0]} />
                     </BarChart>
                   </ResponsiveContainer>
