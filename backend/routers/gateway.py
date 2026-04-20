@@ -37,13 +37,16 @@ def get_active_key(db: Session, provider: str, category: str = None) -> models.A
     if category:
         query = query.filter(models.ApiKey.category == category)
     
-    key = query.first()
+    import random
+    keys = query.all()
+    key = random.choice(keys) if keys else None
     if not key and category:
         # Fallback to any active key for this provider
-        key = db.query(models.ApiKey).filter(
+        keys = db.query(models.ApiKey).filter(
             models.ApiKey.provider == provider,
             models.ApiKey.status.ilike("%active%")
-        ).first()
+        ).all()
+        key = random.choice(keys) if keys else None
     return key
 
 @router.api_route("/{provider}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
