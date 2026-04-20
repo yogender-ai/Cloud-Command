@@ -4,7 +4,7 @@ import { getToken, removeToken } from '../auth';
 // Normalise: strip trailing slash, then always append /api
 // So VITE_API_URL can be "https://cloud-command.onrender.com" OR ".../api" — both work
 const _raw = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
-const API_URL = _raw
+export const API_URL = _raw
   ? (_raw.endsWith('/api') ? _raw : `${_raw}/api`)
   : '/api';
 

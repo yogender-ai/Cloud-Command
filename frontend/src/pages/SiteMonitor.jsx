@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer, YAxis, Tooltip, XAxis, CartesianGrid, BarChart, Bar } from 'recharts';
 import { toast } from 'sonner';
-import { getMonitors, addMonitor, deleteMonitor, updateMonitor, getMonitorLogs, exportMonitorCSV, inspectMonitor, getMonitorAnalytics } from '../api';
+import { getMonitors, addMonitor, deleteMonitor, updateMonitor, getMonitorLogs, exportMonitorCSV, inspectMonitor, getMonitorAnalytics, API_URL } from '../api';
 import { CategoryBadge, CategoryEditor, getCategoryColor } from '../components/CategoryEditor';
 
 function formatAgo(dateStr) {
@@ -53,7 +53,7 @@ function MonitorCard({ monitor, onDelete, onClick, onCategoryChange, allCategori
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
       className="card card-interactive" style={{ display: 'flex', flexDirection: 'column', borderColor: borderColor }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
-        <div style={{ flex: 1, minWidth: 0 }} onClick={() => onClick(monitor, logs)} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
+        <div onClick={() => onClick(monitor, logs)} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
           <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 2 }}>{monitor.name}</h3>
           <p style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 190 }}>
             <Globe size={12} /> {monitor.url}
@@ -131,7 +131,7 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
   const trackingSnippet = `<!-- Cloud Command Visitor Tracking -->
 <script>
 (function(){
-  fetch('${BACKEND_URL}/api/track/${monitor.id}', {
+  fetch('${API_URL}/track/${monitor.id}', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ path: location.pathname, ref: document.referrer })
@@ -452,15 +452,30 @@ export default function SiteMonitor() {
           {monitors.length === 0 && <button className="btn btn-primary" onClick={() => setShowAdd(true)}>Add Your First Monitor</button>}
         </div>
       ) : (
-        <div className="grid grid-3">
+        <div>
           <AnimatePresence>
-            {filtered.map(m => (
-              <MonitorCard key={m.id} monitor={m} onDelete={handleDelete}
-                onClick={(mon, logs) => setSelected({ monitor: mon, logs })}
-                onCategoryChange={handleCategoryChange}
-                allCategories={allCategories}
-              />
-            ))}
+            {['Uncategorized', ...allCategories].map(cat => {
+              const catMonitors = filtered.filter(m => cat === 'Uncategorized' ? !m.category : m.category === cat);
+              if (catMonitors.length === 0) return null;
+              return (
+                <motion.div key={cat} initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ marginBottom: 40 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20, borderBottom: '1px solid var(--border)', paddingBottom: 12 }}>
+                    {cat !== 'Uncategorized' && <div style={{ width: 12, height: 12, borderRadius: '50%', background: getCategoryColor(cat)?.bg, border: `1px solid ${getCategoryColor(cat)?.border}` }} />}
+                    <h2 style={{ fontSize: 18, fontWeight: 700, margin: 0, color: 'var(--text-primary)' }}>{cat}</h2>
+                    <span className="badge badge-neutral">{catMonitors.length}</span>
+                  </div>
+                  <div className="grid grid-3">
+                    {catMonitors.map(m => (
+                      <MonitorCard key={m.id} monitor={m} onDelete={handleDelete}
+                        onClick={(mon, logs) => setSelected({ monitor: mon, logs })}
+                        onCategoryChange={handleCategoryChange}
+                        allCategories={allCategories}
+                      />
+                    ))}
+                  </div>
+                </motion.div>
+              );
+            })}
           </AnimatePresence>
         </div>
       )}
