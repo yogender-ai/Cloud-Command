@@ -145,7 +145,8 @@ async def proxy_gateway(
         if tracked_tokens > 0:
             background_tasks.add_task(log_api_usage, db, api_key.id, tracked_tokens)
             
-        return Response(content=resp_bytes, status_code=resp.status_code, headers=dict(resp.headers))
+        filtered_headers = {k: v for k, v in resp.headers.items() if k.lower() not in ("content-length", "content-encoding")}
+        return Response(content=resp_bytes, status_code=resp.status_code, headers=filtered_headers)
 
     # Streaming block
     async def stream_generator():
