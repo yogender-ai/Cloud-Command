@@ -1,7 +1,12 @@
 import axios from 'axios';
 import { getToken, removeToken } from '../auth';
 
-const API_URL = import.meta.env.VITE_API_URL || '/api';
+// Normalise: strip trailing slash, then always append /api
+// So VITE_API_URL can be "https://cloud-command.onrender.com" OR ".../api" — both work
+const _raw = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '');
+const API_URL = _raw
+  ? (_raw.endsWith('/api') ? _raw : `${_raw}/api`)
+  : '/api';
 
 const api = axios.create({ baseURL: API_URL });
 
