@@ -4,7 +4,7 @@ Security module — Argon2id password hashing, Fernet AES encryption, JWT tokens
 
 from datetime import datetime, timedelta, timezone
 from jose import jwt, JWTError
-from argon2 import PasswordHasher
+from argon2 import PasswordHasher, Type
 from argon2.exceptions import VerifyMismatchError, VerificationError, InvalidHashError
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -21,7 +21,7 @@ _ph = PasswordHasher(
     parallelism=4,     # 4 parallel threads
     hash_len=32,
     salt_len=16,
-    type=PasswordHasher.Type.ID,  # Argon2id variant
+    type=Type.ID,  # Argon2id (default in argon2-cffi 21.2+)
 )
 
 
