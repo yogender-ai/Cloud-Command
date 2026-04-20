@@ -130,12 +130,24 @@ def keep_alive():
     return {"status": "alive", "service": "cloud-command"}
 
 
+from pydantic import BaseModel
+from typing import Optional
+
+class VisitRequest(BaseModel):
+    local_date: Optional[str] = None
+
 @app.post("/api/analytics/visit")
-def record_visit():
+def record_visit(req: VisitRequest = None):
     """Record a platform visit for analytics."""
     db = SessionLocal()
     try:
         today = date.today()
+        if req and req.local_date:
+            try:
+                today = date.fromisoformat(req.local_date)
+            except ValueError:
+                pass
+
         visit = db.query(PlatformVisit).filter(PlatformVisit.date == today).first()
         if visit:
             visit.visits += 1

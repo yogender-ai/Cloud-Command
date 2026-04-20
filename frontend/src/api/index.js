@@ -84,7 +84,11 @@ export const redeployVercelProject = (accountId, projectId) => api.post(`/vercel
 export const getVercelEnvVars = (accountId, projectId) => api.get(`/vercel/accounts/${accountId}/projects/${projectId}/env`).then(r => r.data);
 
 // ── Analytics ──
-export const recordVisit = () => api.post('/analytics/visit').catch(() => {});
+export const recordVisit = () => {
+  const tzOffset = (new Date()).getTimezoneOffset() * 60000;
+  const localDate = (new Date(Date.now() - tzOffset)).toISOString().split('T')[0];
+  return api.post('/analytics/visit', { local_date: localDate }).catch(() => {});
+};
 export const getVisits = () => api.get('/analytics/visits').then(r => r.data).catch(() => []);
 
 // ── Settings ──

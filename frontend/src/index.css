@@ -80,6 +80,8 @@ html {
 body {
   font-family: var(--font-sans);
   background: var(--bg-primary);
+  background-image: radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.08) 0%, transparent 50%);
+  background-attachment: fixed;
   color: var(--text-primary);
   line-height: 1.6;
   min-height: 100vh;
@@ -332,16 +334,20 @@ a:hover { text-decoration: underline; }
    ══════════════════════════════════════ */
 
 .card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: rgba(15, 15, 22, 0.5);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.2);
   border-radius: var(--radius-lg);
   padding: 24px;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .card:hover {
-  border-color: var(--border-hover);
-  background: var(--bg-card-hover);
+  border-color: rgba(255, 255, 255, 0.1);
+  background: rgba(20, 20, 30, 0.6);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(99, 102, 241, 0.1);
 }
 
 .card-interactive {
@@ -690,8 +696,11 @@ a:hover { text-decoration: underline; }
    ══════════════════════════════════════ */
 
 .chart-container {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
+  background: rgba(15, 15, 22, 0.5);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  box-shadow: 0 4px 24px rgba(0,0,0,0.2);
   border-radius: var(--radius-lg);
   padding: 24px;
 }
