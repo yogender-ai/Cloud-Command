@@ -315,8 +315,9 @@ export default function RenderHub() {
                         </button>
                       );
                     })}
-                  </div>
                 </div>
+                <div className="form-group">
+                  <label className="form-label">API Key</label>
                   <input required type="password" className="form-input form-input-mono" placeholder="rnd_..." value={connectForm.api_token} onChange={e => setConnectForm({...connectForm, api_token: e.target.value})} />
                 </div>
                 <button type="submit" className="btn btn-primary" disabled={connecting} style={{ marginTop: 8 }}>
