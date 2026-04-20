@@ -179,7 +179,8 @@ async def proxy_gateway(
         finally:
             await client.aclose()
             
-            db_session = models.SessionLocal()
+            from database import SessionLocal as DBSession
+            db_session = DBSession()
             try:
                 log_api_usage(db_session, api_key.id, tracked_tokens, resp.status_code, resp.status_code >= 400)
             finally:

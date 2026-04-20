@@ -54,7 +54,7 @@ export const addApiKey = (data) => api.post('/apikeys', data).then(r => r.data);
 export const deleteApiKey = (id) => api.delete(`/apikeys/${id}`);
 export const updateApiKey = (id, data) => api.patch(`/apikeys/${id}`, data).then(r => r.data);
 export const checkApiKey = (id) => api.post(`/apikeys/${id}/check`).then(r => r.data);
-export const getApiKeySummary = () => api.get('/apikeys/summary').then(r => r.data);
+export const getApiKeySummary = (range = '7d') => api.get('/apikeys/summary', { params: { range } }).then(r => r.data);
 export const getApiKeyUsage = (id) => api.get(`/apikeys/${id}/usage`).then(r => r.data);
 export const requestVaultOtp = () => api.post('/apikeys/request-view-otp').then(r => r.data);
 export const verifyVaultOtp = (code) => api.post('/apikeys/verify-view-otp', { code }).then(r => r.data);

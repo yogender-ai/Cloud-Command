@@ -1,17 +1,31 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, KeyRound, CheckCircle2, XCircle, AlertCircle, RefreshCw,
   Trash2, Shield, Zap, X, BarChart3, Lock, Mail, ShieldOff, Filter,
-  ChevronRight, Calculator, Check, Copy
+  ChevronRight, Calculator, Check, Copy, Activity, TrendingUp,
+  Clock, Server, Flame, Hash
 } from 'lucide-react';
-import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, ComposedChart, Bar, Line, BarChart } from 'recharts';
+import {
+  AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip,
+  CartesianGrid, ComposedChart, Bar, Line, BarChart, PieChart, Pie, Cell
+} from 'recharts';
 import { toast } from 'sonner';
 import { getApiKeys, addApiKey, deleteApiKey, updateApiKey, checkApiKey, getApiKeySummary, getProfile, requestVaultOtp, verifyVaultOtp } from '../api';
 import { CategoryEditor } from '../components/CategoryEditor';
 
 const PROVIDERS = ['OpenAI', 'Anthropic', 'Gemini', 'DeepSeek', 'HuggingFace', 'Groq', 'Mistral', 'xAI', 'Cohere', 'Other'];
 const VAULT_LOCK_MS = 15 * 60 * 1000;
+const POLL_INTERVAL = 8000; // 8 second live refresh
+const TIME_RANGES = [
+  { key: '1h', label: '1 Hour' },
+  { key: '1d', label: '1 Day' },
+  { key: '7d', label: '7 Days' },
+  { key: '1m', label: '1 Month' },
+  { key: '1y', label: '1 Year' },
+  { key: 'all', label: 'All Time' },
+];
+const KEY_COLORS = ['#a855f7', '#6366f1', '#10b981', '#f59e0b', '#f43f5e', '#0ea5e9', '#ec4899', '#8b5cf6', '#14b8a6', '#ef4444'];
 
 function StatusBadge({ status }) {
   const s = status.toLowerCase();
@@ -71,8 +85,29 @@ function Countdown({ seconds, onExpire }) {
   return <span style={{ fontFamily: 'var(--font-mono)', color: left < 60 ? 'var(--accent-rose)' : 'var(--text-muted)' }}>{m}:{String(s).padStart(2, '0')}</span>;
 }
 
+/* ── Custom Tooltip ── */
+function CustomTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{
+      background: 'rgba(15,15,25,0.95)', backdropFilter: 'blur(12px)',
+      border: '1px solid rgba(99,102,241,0.25)', borderRadius: 10,
+      padding: '10px 14px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+      minWidth: 140,
+    }}>
+      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginBottom: 6, fontWeight: 600, letterSpacing: '0.04em' }}>{label}</div>
+      {payload.map((p, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginBottom: 3 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: p.color, flexShrink: 0 }} />
+          <span style={{ color: 'rgba(255,255,255,0.7)' }}>{p.name}:</span>
+          <span style={{ fontWeight: 700, color: '#fff', marginLeft: 'auto', fontFamily: 'var(--font-mono)' }}>{typeof p.value === 'number' ? p.value.toLocaleString() : p.value}{p.name?.includes('%') ? '%' : ''}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function DetailModal({ apiKey, onClose }) {
-  const isUp = apiKey.status === 'Active';
   return (
     <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
       <motion.div className="modal-panel modal-panel-lg" initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} onClick={e => e.stopPropagation()}>
@@ -130,9 +165,10 @@ export default function ApiVault() {
   const [adding, setAdding] = useState(false);
   const [filterCat, setFilterCat] = useState('All');
   const [selectedKey, setSelectedKey] = useState(null);
+  const [timeRange, setTimeRange] = useState('7d');
   
   // OTP Flow States
-  const [requireOtpFor, setRequireOtpFor] = useState(null); // 'add' or { type: 'delete', id }
+  const [requireOtpFor, setRequireOtpFor] = useState(null);
   const [otpSent, setOtpSent] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [otpError, setOtpError] = useState('');
@@ -141,18 +177,39 @@ export default function ApiVault() {
   
   const [vaultUnlocked, setVaultUnlocked] = useState(false);
   const lockTimerRef = useRef(null);
+  const pollRef = useRef(null);
 
   useEffect(() => {
     getProfile().then(p => setProfile(p)).catch(() => {});
     loadVaultData();
   }, []);
 
+  // Live polling — auto-refresh every 8 seconds
+  useEffect(() => {
+    pollRef.current = setInterval(() => {
+      loadSummaryOnly();
+    }, POLL_INTERVAL);
+    return () => clearInterval(pollRef.current);
+  }, [timeRange]);
+
+  const loadSummaryOnly = useCallback(async () => {
+    try {
+      const s = await getApiKeySummary(timeRange);
+      setSummary(s);
+    } catch {}
+  }, [timeRange]);
+
   const loadVaultData = async () => {
     try {
-      const [k, s] = await Promise.all([getApiKeys(), getApiKeySummary()]);
+      const [k, s] = await Promise.all([getApiKeys(), getApiKeySummary(timeRange)]);
       setKeys(k); setSummary(s);
     } catch {} finally { setLoading(false); }
   };
+
+  // Reload summary when time range changes
+  useEffect(() => {
+    loadSummaryOnly();
+  }, [timeRange, loadSummaryOnly]);
 
   const handleSendOtp = async (action) => {
     if (!profile?.notification_email) {
@@ -188,7 +245,6 @@ export default function ApiVault() {
       
       toast.success('Authorized successfully');
       
-      // Execute the pending action
       if (requireOtpFor === 'add') {
         setShowAdd(true);
       } else if (requireOtpFor?.type === 'delete') {
@@ -256,13 +312,24 @@ export default function ApiVault() {
 
   if (loading) return <div className="page-container"><div className="loading-screen"><div className="spinner" /><p>Loading API keys...</p></div></div>;
 
+  const processedHistory = (summary?.usage_history || []).map(d => ({
+    ...d,
+    success_requests: (d.total_requests || 0) - (d.failed_requests || 0),
+    success_rate: d.total_requests > 0 ? Math.round(((d.total_requests - d.failed_requests) / d.total_requests) * 100) : 100,
+  }));
+
+  const perKey = summary?.per_key || [];
+
   return (
     <div className="page-container">
       <div className="page-header">
         <div>
           <h1 className="page-title">API Vault</h1>
           <p className="page-subtitle" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Shield size={13} color="var(--accent-emerald)" /> {vaultUnlocked ? "Vault unlocked · Modification authorized" : "Vault secure · Modiciation requires OTP"}
+            <Shield size={13} color="var(--accent-emerald)" /> {vaultUnlocked ? "Vault unlocked · Modification authorized" : "Vault secure · Modification requires OTP"}
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 12, padding: '2px 8px', borderRadius: 6, background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)', fontSize: 11, color: 'var(--accent-emerald)' }}>
+              <Activity size={10} /> LIVE
+            </span>
           </p>
         </div>
         <div className="header-actions">
@@ -274,88 +341,193 @@ export default function ApiVault() {
         </div>
       </div>
 
-      {/* Stats */}
+      {/* ── Stat Cards ── */}
       {summary && (
-        <div className="grid grid-3" style={{ marginBottom: 24 }}>
-          <div className="card stat-card">
-            <div className="stat-icon" style={{ background: 'rgba(99,102,241,0.1)' }}><KeyRound size={20} color="var(--accent-indigo)" /></div>
-            <div><div className="stat-label">Total Keys</div><div className="stat-value">{summary.total_keys}</div></div>
-          </div>
-          <div className="card stat-card">
-            <div className="stat-icon" style={{ background: 'var(--accent-emerald-glow)' }}><Shield size={20} color="var(--accent-emerald)" /></div>
-            <div><div className="stat-label">Active</div><div className="stat-value" style={{ color: 'var(--accent-emerald)' }}>{summary.active_keys}</div></div>
-          </div>
-          <div className="card stat-card">
-            <div className="stat-icon" style={{ background: 'var(--accent-purple-glow)' }}><Zap size={20} color="var(--accent-purple)" /></div>
-            <div><div className="stat-label">Tokens Today</div><div className="stat-value" style={{ color: 'var(--accent-purple)' }}>{summary.tokens_today.toLocaleString()}</div></div>
-          </div>
+        <div className="grid grid-3" style={{ marginBottom: 24, gap: 16 }}>
+          {[
+            { icon: <KeyRound size={20} />, label: 'Total Keys', value: summary.total_keys, color: '#6366f1', glow: 'rgba(99,102,241,0.1)' },
+            { icon: <Shield size={20} />, label: 'Active', value: summary.active_keys, color: '#10b981', glow: 'var(--accent-emerald-glow)' },
+            { icon: <Zap size={20} />, label: 'Tokens Today', value: (summary.tokens_today || 0).toLocaleString(), color: '#a855f7', glow: 'var(--accent-purple-glow)' },
+            { icon: <Server size={20} />, label: 'Requests Today', value: summary.requests_today || 0, color: '#0ea5e9', glow: 'rgba(14,165,233,0.1)' },
+            { icon: <AlertCircle size={20} />, label: 'Errors Today', value: summary.errors_today || 0, color: '#f43f5e', glow: 'rgba(244,63,94,0.1)' },
+            { icon: <TrendingUp size={20} />, label: 'Success Rate', value: summary.requests_today > 0 ? `${Math.round(((summary.requests_today - summary.errors_today) / summary.requests_today) * 100)}%` : '—', color: '#10b981', glow: 'rgba(16,185,129,0.1)' },
+          ].map((s, i) => (
+            <motion.div key={i} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}
+              className="card stat-card" style={{ borderLeft: `3px solid ${s.color}` }}>
+              <div className="stat-icon" style={{ background: s.glow }}>{React.cloneElement(s.icon, { color: s.color })}</div>
+              <div>
+                <div className="stat-label">{s.label}</div>
+                <div className="stat-value" style={{ color: s.color }}>{s.value}</div>
+              </div>
+            </motion.div>
+          ))}
         </div>
       )}
 
-      {/* Analytics Dashboard */}
-      {summary?.usage_history?.length > 0 && (() => {
-        const processedHistory = summary.usage_history.map(d => ({
-          ...d,
-          success_rate: d.total_requests > 0 ? Math.round(((d.total_requests - d.failed_requests) / d.total_requests) * 100) : 0
-        }));
+      {/* ── Time Range Selector ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 20, flexWrap: 'wrap' }}>
+        <Clock size={14} color="var(--text-muted)" />
+        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', marginRight: 4 }}>Range:</span>
+        {TIME_RANGES.map(tr => (
+          <button key={tr.key} onClick={() => setTimeRange(tr.key)} style={{
+            padding: '5px 14px', borderRadius: 99, fontSize: 12, fontWeight: 600,
+            cursor: 'pointer', border: '1px solid', transition: 'all 0.2s',
+            background: timeRange === tr.key ? 'rgba(99,102,241,0.15)' : 'transparent',
+            borderColor: timeRange === tr.key ? 'rgba(99,102,241,0.5)' : 'var(--border)',
+            color: timeRange === tr.key ? '#818cf8' : 'var(--text-muted)',
+            boxShadow: timeRange === tr.key ? '0 0 12px rgba(99,102,241,0.15)' : 'none',
+          }}>{tr.label}</button>
+        ))}
+      </div>
 
-        return (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 24, marginBottom: 24 }}>
-            <div className="chart-container">
-              <h3 className="chart-title"><Zap size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 8, color: 'var(--accent-purple)' }} />7-Day Token Usage</h3>
-              <div style={{ height: 180 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={processedHistory}>
-                    <defs>
-                      <linearGradient id="tokenGrad" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                    <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="var(--text-muted)" tickFormatter={d => d.slice(5)} />
-                    <YAxis tick={{ fontSize: 11 }} stroke="var(--text-muted)" width={35} />
-                    <Tooltip cursor={{fill: 'var(--bg-hover)'}} contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
-                    <Area type="monotone" dataKey="total_tokens" stroke="#a855f7" fill="url(#tokenGrad)" strokeWidth={2.5} name="Tokens" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
+      {/* ── Analytics Grid ── */}
+      {processedHistory.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
+          {/* Token Usage — Full Width */}
+          <motion.div className="chart-container" style={{ gridColumn: '1 / -1' }}
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
+            <h3 className="chart-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span><Zap size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 8, color: '#a855f7' }} />Token Usage</span>
+              <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                Total: {processedHistory.reduce((s, d) => s + d.total_tokens, 0).toLocaleString()}
+              </span>
+            </h3>
+            <div style={{ height: 220 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={processedHistory}>
+                  <defs>
+                    <linearGradient id="tokenGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#a855f7" stopOpacity={0.3} />
+                      <stop offset="100%" stopColor="#a855f7" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} stroke="transparent" tickFormatter={d => d.length > 5 ? d.slice(5) : d} />
+                  <YAxis tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} stroke="transparent" width={45} tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(1)}k` : v} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Area type="monotone" dataKey="total_tokens" stroke="#a855f7" fill="url(#tokenGrad)" strokeWidth={2.5} name="Tokens" dot={false} activeDot={{ r: 4, fill: '#a855f7', stroke: '#fff', strokeWidth: 2 }} />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
+          </motion.div>
 
-            <div className="chart-container">
-              <h3 className="chart-title"><BarChart3 size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 8, color: 'var(--accent-indigo)' }} />Total API Requests</h3>
-              <div style={{ height: 180 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <ComposedChart data={processedHistory}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                    <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="var(--text-muted)" tickFormatter={d => d.slice(5)} />
-                    <YAxis yAxisId="left" tick={{ fontSize: 11 }} stroke="var(--text-muted)" width={30} allowDecimals={false} />
-                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} stroke="var(--text-muted)" width={35} domain={[0, 100]} tickFormatter={v => `${v}%`} />
-                    <Tooltip cursor={{fill: 'var(--bg-hover)'}} contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
-                    <Bar yAxisId="left" dataKey="total_requests" fill="rgba(99,102,241,0.5)" radius={[3,3,0,0]} name="Requests" barSize={12} />
-                    <Line yAxisId="right" type="step" dataKey="success_rate" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: '#10b981' }} name="Success Rate %" />
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
+          {/* Requests & Success Rate */}
+          <motion.div className="chart-container" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+            <h3 className="chart-title"><BarChart3 size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 8, color: '#6366f1' }} />API Requests</h3>
+            <div style={{ height: 200 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={processedHistory}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} stroke="transparent" tickFormatter={d => d.length > 5 ? d.slice(5) : d} />
+                  <YAxis yAxisId="left" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} stroke="transparent" width={30} allowDecimals={false} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} stroke="transparent" width={35} domain={[0, 100]} tickFormatter={v => `${v}%`} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Bar yAxisId="left" dataKey="success_requests" stackId="a" fill="rgba(99,102,241,0.4)" radius={[0,0,0,0]} name="Success" barSize={14} />
+                  <Bar yAxisId="left" dataKey="failed_requests" stackId="a" fill="rgba(244,63,94,0.6)" radius={[3,3,0,0]} name="Errors" barSize={14} />
+                  <Line yAxisId="right" type="monotone" dataKey="success_rate" stroke="#10b981" strokeWidth={2} dot={false} name="Success Rate %" />
+                </ComposedChart>
+              </ResponsiveContainer>
             </div>
+          </motion.div>
 
-            <div className="chart-container">
-              <h3 className="chart-title"><AlertCircle size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 8, color: 'var(--accent-rose)' }} />Total API Errors</h3>
-              <div style={{ height: 180 }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={processedHistory}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                    <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="var(--text-muted)" tickFormatter={d => d.slice(5)} />
-                    <YAxis tick={{ fontSize: 11 }} stroke="var(--text-muted)" width={30} allowDecimals={false} />
-                    <Tooltip cursor={{fill: 'var(--bg-hover)'}} contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
-                    <Bar dataKey="failed_requests" fill="#f43f5e" radius={[3,3,0,0]} name="Errors" barSize={12} />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+          {/* API Errors */}
+          <motion.div className="chart-container" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+            <h3 className="chart-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span><Flame size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 8, color: '#f43f5e' }} />API Errors</span>
+              <span style={{ fontSize: 11, fontWeight: 600, color: '#f43f5e', fontFamily: 'var(--font-mono)' }}>
+                {processedHistory.reduce((s, d) => s + (d.failed_requests || 0), 0)} total
+              </span>
+            </h3>
+            <div style={{ height: 200 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={processedHistory}>
+                  <defs>
+                    <linearGradient id="errorGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#f43f5e" stopOpacity={0.6} />
+                      <stop offset="100%" stopColor="#f43f5e" stopOpacity={0.1} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} stroke="transparent" tickFormatter={d => d.length > 5 ? d.slice(5) : d} />
+                  <YAxis tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} stroke="transparent" width={30} allowDecimals={false} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Bar dataKey="failed_requests" fill="url(#errorGrad)" radius={[4,4,0,0]} name="Errors" barSize={16} />
+                </BarChart>
+              </ResponsiveContainer>
             </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* ── Per-Key Analytics Table ── */}
+      {perKey.length > 0 && (
+        <motion.div className="chart-container" style={{ marginBottom: 24 }}
+          initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
+          <h3 className="chart-title"><Activity size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 8, color: '#0ea5e9' }} />Per-Key Usage Breakdown</h3>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 4px', fontSize: 13 }}>
+              <thead>
+                <tr style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>#</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>Key Name</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>Provider</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>Project</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>Tokens</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>Requests</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>Errors</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'right', fontWeight: 600 }}>Health</th>
+                </tr>
+              </thead>
+              <tbody>
+                {perKey.map((pk, idx) => {
+                  const health = pk.total_requests > 0 ? Math.round(((pk.total_requests - pk.failed_requests) / pk.total_requests) * 100) : 100;
+                  return (
+                    <tr key={pk.id} style={{
+                      background: 'rgba(255,255,255,0.02)', borderRadius: 8,
+                      transition: 'background 0.15s',
+                    }}
+                      onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                      onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
+                    >
+                      <td style={{ padding: '10px 12px' }}>
+                        <span style={{
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                          width: 24, height: 24, borderRadius: 6,
+                          background: KEY_COLORS[idx % KEY_COLORS.length] + '22',
+                          color: KEY_COLORS[idx % KEY_COLORS.length],
+                          fontSize: 11, fontWeight: 800, fontFamily: 'var(--font-mono)',
+                        }}>{idx + 1}</span>
+                      </td>
+                      <td style={{ padding: '10px 12px', fontWeight: 600, color: 'var(--text-primary)' }}>{pk.name}</td>
+                      <td style={{ padding: '10px 12px' }}>
+                        <span style={{ padding: '3px 10px', borderRadius: 99, background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', color: '#818cf8', fontSize: 11, fontWeight: 600 }}>
+                          {pk.provider}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px 12px', color: 'var(--text-muted)', fontSize: 12 }}>{pk.category || '—'}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#a855f7' }}>{pk.total_tokens.toLocaleString()}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 600, color: '#6366f1' }}>{pk.total_requests}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 600, color: pk.failed_requests > 0 ? '#f43f5e' : 'var(--text-muted)' }}>{pk.failed_requests}</td>
+                      <td style={{ padding: '10px 12px', textAlign: 'right' }}>
+                        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{ width: 50, height: 5, borderRadius: 99, background: 'rgba(255,255,255,0.08)', overflow: 'hidden' }}>
+                            <div style={{
+                              height: '100%', borderRadius: 99, transition: 'width 0.5s',
+                              width: `${health}%`,
+                              background: health >= 80 ? '#10b981' : health >= 50 ? '#f59e0b' : '#f43f5e',
+                            }} />
+                          </div>
+                          <span style={{ fontSize: 11, fontWeight: 700, fontFamily: 'var(--font-mono)', color: health >= 80 ? '#10b981' : health >= 50 ? '#f59e0b' : '#f43f5e' }}>{health}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        );
-      })()}
+        </motion.div>
+      )}
 
       {/* Category filter */}
       {categories.length > 1 && (
@@ -404,35 +576,57 @@ export default function ApiVault() {
                         </h3>
                         <div className="grid grid-3">
                           <AnimatePresence>
-                            {providerKeys.map(key => (
-                              <motion.div key={key.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
-                                className="card card-interactive" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }} onClick={() => setSelectedKey(key)}>
-                                  <div>
-                                    <h3 style={{ fontSize: 16, fontWeight: 700 }}>{key.name}</h3>
-                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2 }}>{key.provider}</div>
+                            {providerKeys.map((key, keyIdx) => {
+                              // Find numeric index for the key
+                              const globalIdx = keys.findIndex(k => k.id === key.id);
+                              const pkData = perKey.find(pk => pk.id === key.id);
+                              return (
+                                <motion.div key={key.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
+                                  className="card card-interactive" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }} onClick={() => setSelectedKey(key)}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                      <span style={{
+                                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                        width: 28, height: 28, borderRadius: 8, flexShrink: 0,
+                                        background: KEY_COLORS[globalIdx % KEY_COLORS.length] + '22',
+                                        color: KEY_COLORS[globalIdx % KEY_COLORS.length],
+                                        fontSize: 12, fontWeight: 800, fontFamily: 'var(--font-mono)',
+                                      }}>#{globalIdx + 1}</span>
+                                      <div>
+                                        <h3 style={{ fontSize: 16, fontWeight: 700 }}>{key.name}</h3>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2 }}>{key.provider}</div>
+                                      </div>
+                                    </div>
+                                    <StatusBadge status={key.status} />
                                   </div>
-                                  <StatusBadge status={key.status} />
-                                </div>
-                                <CategoryEditor
-                                  category={key.category}
-                                  suggestions={allCategories.filter(c => c !== key.category)}
-                                  onSave={cat => handleCategoryChange(key.id, cat)}
-                                />
-                                <div onClick={() => setSelectedKey(key)} style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                  <KeyRound size={13} style={{ opacity: 0.5 }} /> ********************
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 'auto' }}>
-                                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Checked: {new Date(key.last_checked).toLocaleString()}</div>
-                                  <div style={{ display: 'flex', gap: 4 }}>
-                                    <button className="btn btn-ghost btn-icon" onClick={(e) => handleCheck(e, key.id)} title="Re-validate"><RefreshCw size={14} /></button>
-                                    <button className="btn btn-ghost btn-icon" onClick={(e) => { e.stopPropagation(); attemptDelete(key.id); }} title="Delete">
-                                      {sending && requireOtpFor?.id === key.id ? <div className="spinner" style={{width:14,height:14}}/> : <Trash2 size={14} color="var(--accent-rose)" />}
-                                    </button>
+                                  <CategoryEditor
+                                    category={key.category}
+                                    suggestions={allCategories.filter(c => c !== key.category)}
+                                    onSave={cat => handleCategoryChange(key.id, cat)}
+                                  />
+                                  <div onClick={() => setSelectedKey(key)} style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                    <KeyRound size={13} style={{ opacity: 0.5 }} /> ********************
                                   </div>
-                                </div>
-                              </motion.div>
-                            ))}
+                                  {/* Mini stats */}
+                                  {pkData && (
+                                    <div style={{ display: 'flex', gap: 12, fontSize: 11 }}>
+                                      <span style={{ color: '#a855f7', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{pkData.total_tokens.toLocaleString()} tok</span>
+                                      <span style={{ color: '#6366f1', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{pkData.total_requests} req</span>
+                                      {pkData.failed_requests > 0 && <span style={{ color: '#f43f5e', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{pkData.failed_requests} err</span>}
+                                    </div>
+                                  )}
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 'auto' }}>
+                                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Checked: {new Date(key.last_checked).toLocaleString()}</div>
+                                    <div style={{ display: 'flex', gap: 4 }}>
+                                      <button className="btn btn-ghost btn-icon" onClick={(e) => handleCheck(e, key.id)} title="Re-validate"><RefreshCw size={14} /></button>
+                                      <button className="btn btn-ghost btn-icon" onClick={(e) => { e.stopPropagation(); attemptDelete(key.id); }} title="Delete">
+                                        {sending && requireOtpFor?.id === key.id ? <div className="spinner" style={{width:14,height:14}}/> : <Trash2 size={14} color="var(--accent-rose)" />}
+                                      </button>
+                                    </div>
+                                  </div>
+                                </motion.div>
+                              );
+                            })}
                           </AnimatePresence>
                         </div>
                       </div>
