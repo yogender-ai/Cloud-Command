@@ -99,6 +99,26 @@ def disconnect_account(
     db.commit()
 
 
+@router.patch("/accounts/{account_id}", response_model=schemas.PlatformAccountResponse)
+def update_account(
+    account_id: int,
+    req: schemas.MonitorUpdate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Update the label and/or category of a connected Render account."""
+    account = _get_account(db, user, account_id)
+    if req.name is not None:
+        account.account_name = req.name
+    if req.category is not None:
+        account.category = req.category
+    elif req.clear_category:
+        account.category = None
+    db.commit()
+    db.refresh(account)
+    return account
+
+
 # ── Services ──
 
 

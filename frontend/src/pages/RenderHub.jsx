@@ -2,32 +2,15 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Server, Rocket, Pause, Play, RefreshCw, ExternalLink,
-  GitBranch, X, Trash2, Variable, ShieldOff, Tag, Filter
+  GitBranch, X, Trash2, Variable, ShieldOff, Filter
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-  getRenderAccounts, connectRenderAccount, disconnectRenderAccount,
+  getRenderAccounts, connectRenderAccount, disconnectRenderAccount, updateRenderAccount,
   getRenderServices, getRenderDeploys, triggerRenderDeploy,
   suspendRenderService, resumeRenderService, getRenderEnvVars
 } from '../api';
-
-const ACCOUNT_CATEGORIES = ['Production', 'Staging', 'Client', 'Personal', 'Other'];
-const CAT_COLORS = {
-  Production: { bg: 'rgba(16,185,129,0.12)', color: '#10b981', border: 'rgba(16,185,129,0.25)' },
-  Staging:    { bg: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: 'rgba(245,158,11,0.25)' },
-  Client:     { bg: 'rgba(168,85,247,0.12)', color: '#a855f7', border: 'rgba(168,85,247,0.25)' },
-  Personal:   { bg: 'rgba(6,182,212,0.12)',  color: '#06b6d4', border: 'rgba(6,182,212,0.25)' },
-  Other:      { bg: 'rgba(100,100,130,0.1)', color: '#888',    border: 'rgba(100,100,130,0.2)' },
-};
-function CategoryBadge({ category }) {
-  if (!category) return null;
-  const c = CAT_COLORS[category] || CAT_COLORS.Other;
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 99, fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', background: c.bg, color: c.color, border: `1px solid ${c.border}` }}>
-      <Tag size={9} /> {category}
-    </span>
-  );
-}
+import { CategoryBadge, CategoryEditor } from '../components/CategoryEditor';
 
 export default function RenderHub() {
   const [accounts, setAccounts] = useState([]);
@@ -84,6 +67,17 @@ export default function RenderHub() {
     toast.success('Account disconnected');
   };
 
+  const handleCategoryChange = async (id, cat) => {
+    try {
+      const updated = await updateRenderAccount(id, cat ? { category: cat } : { clear_category: true });
+      setAccounts(prev => prev.map(a => a.id === id ? { ...a, category: updated.category } : a));
+      if (activeAcct?.id === id) setActiveAcct({ ...activeAcct, category: updated.category });
+      toast.success(cat ? `Tagged as "${cat}"` : 'Category cleared');
+    } catch { toast.error('Failed to update category'); }
+  };
+
+  const allCategories = [...new Set(accounts.map(a => a.category).filter(Boolean))];
+
   const openServiceDetail = async (svc) => {
     const svcData = svc.service || svc;
     setSelectedService(svcData);
@@ -125,10 +119,10 @@ export default function RenderHub() {
       ) : (
         <>
           {/* Category Filter */}
-          {accounts.some(a => a.category) && (
+          {allCategories.length > 0 && (
             <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
               <Filter size={14} color="var(--text-muted)" />
-              {['All', ...Array.from(new Set(accounts.map(a => a.category).filter(Boolean)))].map(cat => (
+              {['All', ...allCategories].map(cat => (
                 <button key={cat} onClick={() => setFilterCat(cat)} style={{
                   padding: '4px 12px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer',
                   border: '1px solid', transition: 'all 0.15s',
@@ -143,9 +137,11 @@ export default function RenderHub() {
           <div className="account-tabs">
             {accounts.map(a => (
               <div key={a.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <button className={`account-tab ${activeAcct?.id === a.id ? 'active' : ''}`} onClick={() => setActiveAcct(a)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', height: 'auto', padding: '8px 14px', gap: 3 }}>
+                <button className={`account-tab ${activeAcct?.id === a.id ? 'active' : ''}`} onClick={() => setActiveAcct(a)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', height: 'auto', padding: '8px 14px', gap: 6 }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Server size={14} /> {a.account_name}</span>
-                  {a.category && <CategoryBadge category={a.category} />}
+                  <div onClick={e => e.stopPropagation()}>
+                    <CategoryEditor category={a.category} suggestions={allCategories.filter(c => c !== a.category)} onSave={cat => handleCategoryChange(a.id, cat)} />
+                  </div>
                 </button>
                 <button className="btn btn-ghost btn-icon" style={{ width: 28, height: 28 }} onClick={() => handleDisconnect(a.id)}>
                   <Trash2 size={12} color="var(--accent-rose)" />
@@ -302,20 +298,10 @@ export default function RenderHub() {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Category <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {ACCOUNT_CATEGORIES.map(cat => {
-                      const c = CAT_COLORS[cat] || CAT_COLORS.Other;
-                      const active = connectForm.category === cat;
-                      return (
-                        <button key={cat} type="button" onClick={() => setConnectForm({...connectForm, category: active ? '' : cat})}
-                          style={{ padding: '4px 12px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                            transition: 'all 0.15s', border: `1px solid ${active ? c.border : 'var(--border)'}`,
-                            background: active ? c.bg : 'transparent', color: active ? c.color : 'var(--text-muted)' }}>
-                          {cat}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <input className="form-input" placeholder="e.g. News-Intel" value={connectForm.category} onChange={e => setConnectForm({...connectForm, category: e.target.value})} list="render-categories" />
+                  <datalist id="render-categories">
+                    {allCategories.map(cat => <option key={cat} value={cat} />)}
+                  </datalist>
                 </div>
                 <div className="form-group">
                   <label className="form-label">API Key</label>

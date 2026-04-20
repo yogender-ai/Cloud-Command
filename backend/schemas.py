@@ -37,6 +37,11 @@ class MonitorCreate(BaseModel):
     category: Optional[str] = None
     interval_seconds: int = 60
 
+class MonitorUpdate(BaseModel):
+    name: Optional[str] = None
+    category: Optional[str] = None
+    clear_category: bool = False  # set True to explicitly clear to null
+
 class MonitorResponse(BaseModel):
     id: int
     url: str

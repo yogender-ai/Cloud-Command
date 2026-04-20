@@ -154,6 +154,32 @@ async def create_key(
     return api_key
 
 
+@router.patch("/{key_id}", response_model=schemas.ApiKeyResponse)
+def update_key(
+    key_id: int,
+    req: schemas.MonitorUpdate,  # reuse: name + category + clear_category
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Update name and/or category of an existing API key."""
+    key = (
+        db.query(models.ApiKey)
+        .filter(models.ApiKey.id == key_id, models.ApiKey.user_id == user.id)
+        .first()
+    )
+    if not key:
+        raise HTTPException(status_code=404, detail="API key not found")
+    if req.name is not None:
+        key.name = req.name
+    if req.category is not None:
+        key.category = req.category
+    elif req.clear_category:
+        key.category = None
+    db.commit()
+    db.refresh(key)
+    return key
+
+
 @router.delete("/{key_id}", status_code=204)
 def delete_key(
     key_id: int,

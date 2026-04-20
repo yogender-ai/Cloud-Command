@@ -3,35 +3,12 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, Globe, CheckCircle2, XCircle, Trash2, Clock, ChevronRight,
   Download, Activity, X, Shield, Code, Copy, Check, AlertTriangle,
-  ExternalLink, Server, Lock, Tag, Filter
+  ExternalLink, Server, Lock, Filter
 } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer, YAxis, Tooltip, XAxis, CartesianGrid, BarChart, Bar } from 'recharts';
 import { toast } from 'sonner';
-import { getMonitors, addMonitor, deleteMonitor, getMonitorLogs, exportMonitorCSV, inspectMonitor, getMonitorAnalytics } from '../api';
-
-const BACKEND_URL = (import.meta.env.VITE_API_URL || '').replace(/\/+$/, '').replace(/\/api$/, '') || 'https://cloud-command.onrender.com';
-
-const MONITOR_CATEGORIES = ['Production', 'Staging', 'Development', 'Client', 'Personal', 'AI', 'Other'];
-
-const CATEGORY_COLORS = {
-  Production: { bg: 'rgba(16,185,129,0.12)', color: '#10b981', border: 'rgba(16,185,129,0.25)' },
-  Staging:    { bg: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: 'rgba(245,158,11,0.25)' },
-  Development:{ bg: 'rgba(99,102,241,0.12)', color: '#6366f1', border: 'rgba(99,102,241,0.25)' },
-  Client:     { bg: 'rgba(168,85,247,0.12)', color: '#a855f7', border: 'rgba(168,85,247,0.25)' },
-  Personal:   { bg: 'rgba(6,182,212,0.12)',  color: '#06b6d4', border: 'rgba(6,182,212,0.25)' },
-  AI:         { bg: 'rgba(244,63,94,0.12)',  color: '#f43f5e', border: 'rgba(244,63,94,0.25)' },
-  Other:      { bg: 'rgba(100,100,130,0.1)', color: '#888',    border: 'rgba(100,100,130,0.2)' },
-};
-
-function CategoryBadge({ category }) {
-  if (!category) return null;
-  const c = CATEGORY_COLORS[category] || CATEGORY_COLORS.Other;
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 99, fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', background: c.bg, color: c.color, border: `1px solid ${c.border}` }}>
-      <Tag size={9} /> {category}
-    </span>
-  );
-}
+import { getMonitors, addMonitor, deleteMonitor, updateMonitor, getMonitorLogs, exportMonitorCSV, inspectMonitor, getMonitorAnalytics } from '../api';
+import { CategoryBadge, CategoryEditor, getCategoryColor } from '../components/CategoryEditor';
 
 function formatAgo(dateStr) {
   if (!dateStr) return 'never';
@@ -59,7 +36,7 @@ function CopyButton({ text }) {
   );
 }
 
-function MonitorCard({ monitor, onDelete, onClick }) {
+function MonitorCard({ monitor, onDelete, onClick, onCategoryChange, allCategories }) {
   const [logs, setLogs] = useState([]);
   useEffect(() => {
     getMonitorLogs(monitor.id).then(d => setLogs(d.reverse())).catch(() => {});
@@ -70,20 +47,19 @@ function MonitorCard({ monitor, onDelete, onClick }) {
   }, [monitor.id]);
 
   const isUp = monitor.status === 'UP';
+  const borderColor = monitor.category ? getCategoryColor(monitor.category)?.border : undefined;
+
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
-      className="card card-interactive" onClick={() => onClick(monitor, logs)} style={{ display: 'flex', flexDirection: 'column' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 10 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
+      className="card card-interactive" style={{ display: 'flex', flexDirection: 'column', borderColor: borderColor }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
+        <div style={{ flex: 1, minWidth: 0 }} onClick={() => onClick(monitor, logs)} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
           <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 2 }}>{monitor.name}</h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <p style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 180 }}>
-              <Globe size={12} /> {monitor.url}
-            </p>
-            <CategoryBadge category={monitor.category} />
-          </div>
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 190 }}>
+            <Globe size={12} /> {monitor.url}
+          </p>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginLeft: 8 }}>
           <span className={`badge ${isUp ? 'badge-up badge-live' : 'badge-down'}`}>
             {isUp ? <CheckCircle2 size={10} /> : <XCircle size={10} />} {monitor.status}
           </span>
@@ -91,6 +67,16 @@ function MonitorCard({ monitor, onDelete, onClick }) {
             <Trash2 size={14} color="var(--accent-rose)" />
           </button>
         </div>
+      </div>
+      {/* Inline category editor */}
+      <div style={{ marginBottom: 8 }} onClick={e => e.stopPropagation()}>
+        <CategoryEditor
+          category={monitor.category}
+          suggestions={allCategories.filter(c => c !== monitor.category)}
+          onSave={async (cat) => {
+            await onCategoryChange(monitor.id, cat);
+          }}
+        />
       </div>
       <div style={{ height: 80, width: '100%', margin: '8px 0' }}>
         <ResponsiveContainer width="100%" height="100%">
@@ -415,8 +401,19 @@ export default function SiteMonitor() {
     toast.success('Monitor removed');
   };
 
+  const handleCategoryChange = async (id, cat) => {
+    try {
+      const updated = await updateMonitor(id, cat ? { category: cat } : { clear_category: true });
+      setMonitors(prev => prev.map(m => m.id === id ? { ...m, category: updated.category } : m));
+      toast.success(cat ? `Tagged as "${cat}"` : 'Category cleared');
+    } catch {
+      toast.error('Failed to update category');
+    }
+  };
+
   // Derived: unique categories + filtered list
-  const categories = ['All', ...Array.from(new Set(monitors.map(m => m.category).filter(Boolean)))];
+  const allCategories = [...new Set(monitors.map(m => m.category).filter(Boolean))];
+  const categories = ['All', ...allCategories];
   const filtered = filterCat === 'All' ? monitors : monitors.filter(m => m.category === filterCat);
 
   if (loading) return <div className="page-container"><div className="loading-screen"><div className="spinner" /><p>Loading monitors...</p></div></div>;
@@ -458,7 +455,11 @@ export default function SiteMonitor() {
         <div className="grid grid-3">
           <AnimatePresence>
             {filtered.map(m => (
-              <MonitorCard key={m.id} monitor={m} onDelete={handleDelete} onClick={(mon, logs) => setSelected({ monitor: mon, logs })} />
+              <MonitorCard key={m.id} monitor={m} onDelete={handleDelete}
+                onClick={(mon, logs) => setSelected({ monitor: mon, logs })}
+                onCategoryChange={handleCategoryChange}
+                allCategories={allCategories}
+              />
             ))}
           </AnimatePresence>
         </div>
@@ -487,18 +488,10 @@ export default function SiteMonitor() {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Category <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {MONITOR_CATEGORIES.map(cat => {
-                      const c = CATEGORY_COLORS[cat] || CATEGORY_COLORS.Other;
-                      const active = form.category === cat;
-                      return (
-                        <button key={cat} type="button" onClick={() => setForm({...form, category: active ? '' : cat})}
-                          style={{ padding: '4px 12px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s', border: `1px solid ${active ? c.border : 'var(--border)'}`, background: active ? c.bg : 'transparent', color: active ? c.color : 'var(--text-muted)' }}>
-                          {cat}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <input className="form-input" placeholder="e.g. News-Intel" value={form.category} onChange={e => setForm({...form, category: e.target.value})} list="site-categories" />
+                  <datalist id="site-categories">
+                    {allCategories.map(cat => <option key={cat} value={cat} />)}
+                  </datalist>
                 </div>
                 <div className="form-group">
                   <label className="form-label">Polling Interval</label>

@@ -2,35 +2,15 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, KeyRound, CheckCircle2, XCircle, AlertCircle, RefreshCw,
-  Trash2, Shield, Zap, X, BarChart3, Lock, Mail, ShieldOff, Tag, Filter
+  Trash2, Shield, Zap, X, BarChart3, Lock, Mail, ShieldOff, Filter
 } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
 import { toast } from 'sonner';
-import { getApiKeys, addApiKey, deleteApiKey, checkApiKey, getApiKeySummary, getProfile, requestVaultOtp, verifyVaultOtp } from '../api';
+import { getApiKeys, addApiKey, deleteApiKey, updateApiKey, checkApiKey, getApiKeySummary, getProfile, requestVaultOtp, verifyVaultOtp } from '../api';
+import { CategoryEditor } from '../components/CategoryEditor';
 
 const PROVIDERS = ['OpenAI', 'Anthropic', 'Gemini', 'DeepSeek', 'HuggingFace', 'Groq', 'Mistral', 'xAI', 'Cohere', 'Other'];
-const KEY_CATEGORIES = ['AI', 'Dev Tools', 'Infrastructure', 'Analytics', 'Data', 'Monitoring', 'Other'];
 const VAULT_LOCK_MS = 15 * 60 * 1000;
-
-const CAT_COLORS = {
-  AI:             { bg: 'rgba(168,85,247,0.12)', color: '#a855f7', border: 'rgba(168,85,247,0.25)' },
-  'Dev Tools':    { bg: 'rgba(99,102,241,0.12)', color: '#6366f1', border: 'rgba(99,102,241,0.25)' },
-  Infrastructure: { bg: 'rgba(6,182,212,0.12)',  color: '#06b6d4', border: 'rgba(6,182,212,0.25)' },
-  Analytics:      { bg: 'rgba(245,158,11,0.12)', color: '#f59e0b', border: 'rgba(245,158,11,0.25)' },
-  Data:           { bg: 'rgba(16,185,129,0.12)', color: '#10b981', border: 'rgba(16,185,129,0.25)' },
-  Monitoring:     { bg: 'rgba(244,63,94,0.12)',  color: '#f43f5e', border: 'rgba(244,63,94,0.25)' },
-  Other:          { bg: 'rgba(100,100,130,0.1)', color: '#888',    border: 'rgba(100,100,130,0.2)' },
-};
-
-function CategoryBadge({ category }) {
-  if (!category) return null;
-  const c = CAT_COLORS[category] || CAT_COLORS.Other;
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 99, fontSize: 10, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', background: c.bg, color: c.color, border: `1px solid ${c.border}` }}>
-      <Tag size={9} /> {category}
-    </span>
-  );
-}
 
 function StatusBadge({ status }) {
   const s = status.toLowerCase();
@@ -181,6 +161,18 @@ export default function ApiVault() {
     loadVaultData(); toast.success('All keys refreshed');
   };
 
+  const handleCategoryChange = async (id, cat) => {
+    try {
+      const updated = await updateApiKey(id, cat ? { category: cat } : { clear_category: true });
+      setKeys(prev => prev.map(k => k.id === id ? { ...k, category: updated.category } : k));
+      toast.success(cat ? `Tagged as "${cat}"` : 'Category cleared');
+    } catch { toast.error('Failed to update category'); }
+  };
+
+  const allCategories = [...new Set(keys.map(k => k.category).filter(Boolean))];
+  const categories = ['All', ...allCategories];
+  const filtered = filterCat === 'All' ? keys : keys.filter(k => k.category === filterCat);
+
   if (vaultState === 'no_email') return (
     <div className="page-container">
       <div className="page-header"><div><h1 className="page-title">API Vault</h1><p className="page-subtitle">Securely monitor and validate your AI API keys</p></div></div>
@@ -246,9 +238,7 @@ export default function ApiVault() {
 
   if (loading) return <div className="page-container"><div className="loading-screen"><div className="spinner" /><p>Loading API keys...</p></div></div>;
 
-  // Category filter
-  const categories = ['All', ...Array.from(new Set(keys.map(k => k.category).filter(Boolean)))];
-  const filtered = filterCat === 'All' ? keys : keys.filter(k => k.category === filterCat);
+  // Category filter handled earlier
 
   return (
     <div className="page-container">
@@ -345,13 +335,16 @@ export default function ApiVault() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
                     <h3 style={{ fontSize: 16, fontWeight: 700 }}>{key.name}</h3>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{key.provider}</div>
-                      <CategoryBadge category={key.category} />
-                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2 }}>{key.provider}</div>
                   </div>
                   <StatusBadge status={key.status} />
                 </div>
+                {/* Inline category editor */}
+                <CategoryEditor
+                  category={key.category}
+                  suggestions={allCategories.filter(c => c !== key.category)}
+                  onSave={cat => handleCategoryChange(key.id, cat)}
+                />
                 <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <KeyRound size={13} style={{ opacity: 0.5 }} /> {key.masked_key}
                 </div>
@@ -390,18 +383,10 @@ export default function ApiVault() {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Category <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                    {KEY_CATEGORIES.map(cat => {
-                      const c = CAT_COLORS[cat] || CAT_COLORS.Other;
-                      const active = form.category === cat;
-                      return (
-                        <button key={cat} type="button" onClick={() => setForm({...form, category: active ? '' : cat})}
-                          style={{ padding: '4px 12px', borderRadius: 99, fontSize: 12, fontWeight: 600, cursor: 'pointer', transition: 'all 0.15s', border: `1px solid ${active ? c.border : 'var(--border)'}`, background: active ? c.bg : 'transparent', color: active ? c.color : 'var(--text-muted)' }}>
-                          {cat}
-                        </button>
-                      );
-                    })}
-                  </div>
+                  <input className="form-input" placeholder="e.g. News-Intel" value={form.category} onChange={e => setForm({...form, category: e.target.value})} list="api-categories" />
+                  <datalist id="api-categories">
+                    {allCategories.map(cat => <option key={cat} value={cat} />)}
+                  </datalist>
                 </div>
                 <div className="form-group">
                   <label className="form-label">API Key</label>

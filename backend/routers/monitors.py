@@ -58,6 +58,32 @@ def create_monitor(
     return monitor
 
 
+@router.patch("/{monitor_id}", response_model=schemas.MonitorResponse)
+def update_monitor(
+    monitor_id: int,
+    req: schemas.MonitorUpdate,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Update name and/or category of an existing monitor."""
+    monitor = (
+        db.query(models.Monitor)
+        .filter(models.Monitor.id == monitor_id, models.Monitor.user_id == user.id)
+        .first()
+    )
+    if not monitor:
+        raise HTTPException(status_code=404, detail="Monitor not found")
+    if req.name is not None:
+        monitor.name = req.name
+    if req.category is not None:
+        monitor.category = req.category
+    elif req.clear_category:
+        monitor.category = None
+    db.commit()
+    db.refresh(monitor)
+    return monitor
+
+
 @router.delete("/{monitor_id}", status_code=204)
 def delete_monitor(
     monitor_id: int,

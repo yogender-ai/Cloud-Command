@@ -41,6 +41,7 @@ export const getMe = () => api.get('/auth/me').then(r => r.data);
 export const getMonitors = () => api.get('/monitors').then(r => r.data);
 export const addMonitor = (data) => api.post('/monitors', data).then(r => r.data);
 export const deleteMonitor = (id) => api.delete(`/monitors/${id}`);
+export const updateMonitor = (id, data) => api.patch(`/monitors/${id}`, data).then(r => r.data);
 export const getMonitorLogs = (id) => api.get(`/monitors/${id}/logs`).then(r => r.data);
 export const getMonitorAnalytics = (id) => api.get(`/monitors/${id}/analytics`).then(r => r.data);
 export const inspectMonitor = (id) => api.get(`/monitors/${id}/inspect`).then(r => r.data);
@@ -51,6 +52,7 @@ export const exportMonitorCSV = (id) =>
 export const getApiKeys = () => api.get('/apikeys').then(r => r.data);
 export const addApiKey = (data) => api.post('/apikeys', data).then(r => r.data);
 export const deleteApiKey = (id) => api.delete(`/apikeys/${id}`);
+export const updateApiKey = (id, data) => api.patch(`/apikeys/${id}`, data).then(r => r.data);
 export const checkApiKey = (id) => api.post(`/apikeys/${id}/check`).then(r => r.data);
 export const getApiKeySummary = () => api.get('/apikeys/summary').then(r => r.data);
 export const getApiKeyUsage = (id) => api.get(`/apikeys/${id}/usage`).then(r => r.data);
@@ -61,6 +63,7 @@ export const verifyVaultOtp = (code) => api.post('/apikeys/verify-view-otp', { c
 export const getRenderAccounts = () => api.get('/render/accounts').then(r => r.data);
 export const connectRenderAccount = (data) => api.post('/render/accounts', { provider: 'render', ...data }).then(r => r.data);
 export const disconnectRenderAccount = (id) => api.delete(`/render/accounts/${id}`);
+export const updateRenderAccount = (id, data) => api.patch(`/render/accounts/${id}`, data).then(r => r.data);
 export const getRenderServices = (accountId) => api.get(`/render/accounts/${accountId}/services`).then(r => r.data);
 export const getRenderService = (accountId, serviceId) => api.get(`/render/accounts/${accountId}/services/${serviceId}`).then(r => r.data);
 export const getRenderDeploys = (accountId, serviceId) => api.get(`/render/accounts/${accountId}/services/${serviceId}/deploys`).then(r => r.data);
@@ -73,6 +76,7 @@ export const getRenderEnvVars = (accountId, serviceId) => api.get(`/render/accou
 export const getVercelAccounts = () => api.get('/vercel/accounts').then(r => r.data);
 export const connectVercelAccount = (data) => api.post('/vercel/accounts', { provider: 'vercel', ...data }).then(r => r.data);
 export const disconnectVercelAccount = (id) => api.delete(`/vercel/accounts/${id}`);
+export const updateVercelAccount = (id, data) => api.patch(`/vercel/accounts/${id}`, data).then(r => r.data);
 export const getVercelProjects = (accountId) => api.get(`/vercel/accounts/${accountId}/projects`).then(r => r.data);
 export const getVercelDeployments = (accountId, projectId) => api.get(`/vercel/accounts/${accountId}/deployments`, { params: { project_id: projectId } }).then(r => r.data);
 export const getVercelDeploymentEvents = (accountId, deploymentId) => api.get(`/vercel/accounts/${accountId}/deployments/${deploymentId}/events`).then(r => r.data);
