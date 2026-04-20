@@ -315,6 +315,7 @@ export default function RenderHub() {
                         </button>
                       );
                     })}
+                  </div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">API Key</label>
