@@ -45,6 +45,15 @@ def create_monitor(
     db.add(monitor)
     db.commit()
     db.refresh(monitor)
+
+    # Notify user
+    try:
+        from services.mailer import send_monitor_action_email
+        alert_to = user.notification_email or user.email
+        send_monitor_action_email(to=alert_to, action="added", url=req.url)
+    except Exception as e:
+        print(f"Monitor add email failed: {e}")
+
     return monitor
 
 
@@ -63,8 +72,17 @@ def delete_monitor(
     if not monitor:
         raise HTTPException(status_code=404, detail="Monitor not found")
 
+    monitor_url = monitor.url
     db.delete(monitor)
     db.commit()
+
+    # Notify user
+    try:
+        from services.mailer import send_monitor_action_email
+        alert_to = user.notification_email or user.email
+        send_monitor_action_email(to=alert_to, action="deleted", url=monitor_url)
+    except Exception as e:
+        print(f"Monitor delete email failed: {e}")
 
 
 @router.get("/{monitor_id}/logs", response_model=List[schemas.MonitorLogResponse])

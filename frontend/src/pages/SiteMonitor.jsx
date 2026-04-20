@@ -291,13 +291,13 @@ export default function SiteMonitor() {
                   <label className="form-label">URL</label>
                   <input required type="url" className="form-input form-input-mono" placeholder="https://api.example.com" value={form.url} onChange={e => setForm({...form, url: e.target.value})} />
                 </div>
-                <div className="form-group">
+                  <div className="form-group">
                   <label className="form-label">Polling Interval</label>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                    {[30, 60].map(v => (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
+                    {[30, 60, 120, 300].map(v => (
                       <button key={v} type="button" onClick={() => setForm({...form, interval_seconds: v})}
-                        className={`btn ${form.interval_seconds === v ? 'btn-primary' : 'btn-secondary'}`} style={{ justifyContent: 'center' }}>
-                        {v}s
+                        className={`btn ${form.interval_seconds === v ? 'btn-primary' : 'btn-secondary'}`} style={{ justifyContent: 'center', fontSize: 12 }}>
+                        {v < 60 ? `${v}s` : `${v / 60}m`}
                       </button>
                     ))}
                   </div>

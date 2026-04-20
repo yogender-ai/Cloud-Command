@@ -3,20 +3,38 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Globe, KeyRound, Server, Triangle, Activity,
-  ArrowUpRight, CheckCircle2, XCircle, Zap, TrendingUp
+  ArrowUpRight, CheckCircle2, XCircle, Zap, TrendingUp, Users
 } from 'lucide-react';
-import { getMonitors, getApiKeySummary, getRenderAccounts, getVercelAccounts, recordVisit } from '../api';
+import {
+  AreaChart, Area, ResponsiveContainer, XAxis, YAxis,
+  Tooltip, CartesianGrid
+} from 'recharts';
+import { getMonitors, getApiKeySummary, getRenderAccounts, getVercelAccounts, recordVisit, getVisits } from '../api';
 
 const cardVariants = {
   hidden: { opacity: 0, y: 16 },
   visible: (i) => ({ opacity: 1, y: 0, transition: { delay: i * 0.08, duration: 0.4, ease: [0.4, 0, 0.2, 1] } }),
 };
 
+function CustomTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{
+      background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+      borderRadius: 10, padding: '10px 14px', fontSize: 12,
+    }}>
+      <p style={{ color: 'var(--text-muted)', marginBottom: 4 }}>{label}</p>
+      <p style={{ color: 'var(--accent-indigo)', fontWeight: 700 }}>{payload[0].value} visits</p>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [monitors, setMonitors] = useState([]);
   const [apiSummary, setApiSummary] = useState(null);
   const [renderAccounts, setRenderAccounts] = useState([]);
   const [vercelAccounts, setVercelAccounts] = useState([]);
+  const [visits, setVisits] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -26,11 +44,18 @@ export default function Dashboard() {
       getApiKeySummary().catch(() => null),
       getRenderAccounts().catch(() => []),
       getVercelAccounts().catch(() => []),
-    ]).then(([m, a, r, v]) => {
+      getVisits().catch(() => []),
+    ]).then(([m, a, r, v, vis]) => {
       setMonitors(m);
       setApiSummary(a);
       setRenderAccounts(r);
       setVercelAccounts(v);
+      // Format visits for chart (reverse to chronological order)
+      const chartData = [...vis].reverse().map(d => ({
+        date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        visits: d.visits,
+      }));
+      setVisits(chartData);
       setLoading(false);
     });
   }, []);
@@ -43,6 +68,7 @@ export default function Dashboard() {
     {
       label: 'Sites Monitored',
       value: monitors.length,
+      sub: monitors.length > 0 ? `${monitorsDown > 0 ? monitorsDown + ' down' : 'all healthy'}` : 'none yet',
       icon: Globe,
       color: '#10b981',
       bg: 'var(--accent-emerald-glow)',
@@ -60,6 +86,7 @@ export default function Dashboard() {
     {
       label: 'Render Accounts',
       value: renderAccounts.length,
+      sub: 'connected',
       icon: Server,
       color: '#34d399',
       bg: 'var(--accent-emerald-glow)',
@@ -68,6 +95,7 @@ export default function Dashboard() {
     {
       label: 'Vercel Accounts',
       value: vercelAccounts.length,
+      sub: 'connected',
       icon: Triangle,
       color: '#f0f0f5',
       bg: 'rgba(255,255,255,0.05)',
@@ -85,6 +113,8 @@ export default function Dashboard() {
       </div>
     );
   }
+
+  const totalVisits = visits.reduce((s, d) => s + d.visits, 0);
 
   return (
     <div className="page-container">
@@ -139,7 +169,7 @@ export default function Dashboard() {
         })}
       </div>
 
-      {/* Uptime + System Status */}
+      {/* Uptime + System Status + Tokens */}
       <div className="grid grid-3" style={{ marginBottom: 32 }}>
         <motion.div
           initial={{ opacity: 0, y: 12 }}
@@ -154,8 +184,11 @@ export default function Dashboard() {
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: 8 }}>
             Global Uptime
           </div>
-          <div style={{ fontSize: 48, fontWeight: 900, color: 'var(--accent-emerald)', letterSpacing: '-0.03em' }}>
+          <div style={{ fontSize: 48, fontWeight: 900, color: parseFloat(uptime) >= 99 ? 'var(--accent-emerald)' : parseFloat(uptime) >= 90 ? 'var(--accent-amber)' : 'var(--accent-rose)', letterSpacing: '-0.03em' }}>
             {uptime}%
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+            {monitorsUp}/{monitors.length} sites up
           </div>
         </motion.div>
 
@@ -183,6 +216,9 @@ export default function Dashboard() {
               {monitorsDown > 0 ? `${monitorsDown} Degraded` : 'Fully Operational'}
             </span>
           </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+            {monitors.length === 0 ? 'No monitors configured' : 'All systems monitored'}
+          </div>
         </motion.div>
 
         <motion.div
@@ -203,6 +239,48 @@ export default function Dashboard() {
           </div>
         </motion.div>
       </div>
+
+      {/* Platform Visits Chart */}
+      {visits.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.55 }}
+          style={{ marginBottom: 32 }}
+        >
+          <div className="chart-container">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <h3 className="chart-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Users size={16} style={{ display: 'inline' }} /> Platform Visits
+              </h3>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                {totalVisits.toLocaleString()} total · last 30 days
+              </span>
+            </div>
+            <div style={{ height: 180 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={visits}>
+                  <defs>
+                    <linearGradient id="visitGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="var(--text-muted)" interval="preserveStartEnd" />
+                  <YAxis tick={{ fontSize: 11 }} stroke="var(--text-muted)" width={40} />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Area
+                    type="monotone" dataKey="visits"
+                    stroke="#6366f1" fill="url(#visitGrad)"
+                    strokeWidth={2.5}
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {/* Quick Status Grid */}
       {monitors.length > 0 && (
@@ -238,6 +316,30 @@ export default function Dashboard() {
                   </span>
                 </Link>
               ))}
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Empty State — no data at all */}
+      {monitors.length === 0 && !apiSummary?.total_keys && renderAccounts.length === 0 && vercelAccounts.length === 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.6 }}
+        >
+          <div className="card" style={{ padding: 48, textAlign: 'center' }}>
+            <div style={{ width: 64, height: 64, borderRadius: 'var(--radius-lg)', background: 'var(--accent-indigo-glow)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+              <Activity size={28} color="var(--accent-indigo)" />
+            </div>
+            <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Welcome to Cloud Command</h3>
+            <p style={{ color: 'var(--text-muted)', marginBottom: 24, maxWidth: 400, margin: '0 auto 24px' }}>
+              Get started by adding a site monitor, connecting a Render or Vercel account, or adding your API keys.
+            </p>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <Link to="/monitors" className="btn btn-primary"><Globe size={15} /> Add Monitor</Link>
+              <Link to="/api-keys" className="btn btn-secondary"><KeyRound size={15} /> Add API Key</Link>
+              <Link to="/render" className="btn btn-secondary"><Server size={15} /> Connect Render</Link>
             </div>
           </div>
         </motion.div>

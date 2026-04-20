@@ -7,6 +7,7 @@ import string
 import models
 import schemas
 from dependencies import get_db, get_current_user
+from security import hash_password, verify_password
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -71,3 +72,21 @@ def verify_otp(
     db.commit()
 
     return {"message": "Notification email updated successfully"}
+
+
+@router.post("/change-password")
+def change_password(
+    req: schemas.ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Change the current user's password after verifying the old one."""
+    if not verify_password(req.current_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    if len(req.new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
+
+    user.password_hash = hash_password(req.new_password)
+    db.commit()
+    return {"message": "Password changed successfully"}

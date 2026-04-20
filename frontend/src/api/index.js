@@ -80,3 +80,4 @@ export const getVisits = () => api.get('/analytics/visits').then(r => r.data).ca
 export const requestOtp = (email) => api.post('/settings/notification-email/request-otp', { email }).then(r => r.data);
 export const verifyOtp = (email, code) => api.post('/settings/notification-email/verify-otp', { email, code }).then(r => r.data);
 export const getProfile = () => api.get('/settings/profile').then(r => r.data);
+export const changePassword = (current_password, new_password) => api.post('/settings/change-password', { current_password, new_password }).then(r => r.data);

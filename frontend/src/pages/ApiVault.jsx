@@ -8,7 +8,7 @@ import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianG
 import { toast } from 'sonner';
 import { getApiKeys, addApiKey, deleteApiKey, checkApiKey, getApiKeySummary } from '../api';
 
-const PROVIDERS = ['OpenAI', 'Anthropic', 'Gemini', 'DeepSeek', 'HuggingFace', 'Groq', 'Mistral', 'Other'];
+const PROVIDERS = ['OpenAI', 'Anthropic', 'Gemini', 'DeepSeek', 'HuggingFace', 'Groq', 'Mistral', 'xAI', 'Cohere', 'Other'];
 
 function StatusBadge({ status }) {
   const s = status.toLowerCase();

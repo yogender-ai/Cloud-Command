@@ -2,24 +2,42 @@
 node_modules/
 __pycache__/
 *.pyc
+*.pyo
 .venv/
 venv/
+env/
 
-# Build
+# Build outputs
 dist/
 build/
+*.egg-info/
 
-# Environment
+# Environment files (keep .env.example files)
 .env
+.env.local
+.env.*.local
+frontend/.env
+frontend/.env.local
+backend/.env
+
+# Database
 *.db
+*.sqlite
 
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
 
 # OS
 .DS_Store
 Thumbs.db
+desktop.ini
 
 # Logs
 *.log
+logs/
+
+# Runtime
+*.pid

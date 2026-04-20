@@ -97,6 +97,28 @@ async def check_api_key_validity(provider: str, key: str) -> str:
                     return "Invalid"
                 return f"Error ({r.status_code})"
 
+            elif p in ("xai", "grok"):
+                r = await client.get(
+                    "https://api.x.ai/v1/models",
+                    headers={"Authorization": f"Bearer {key}"},
+                )
+                if r.status_code == 200:
+                    return "Active"
+                elif r.status_code == 401:
+                    return "Invalid"
+                return f"Error ({r.status_code})"
+
+            elif p == "cohere":
+                r = await client.get(
+                    "https://api.cohere.com/v1/models",
+                    headers={"Authorization": f"Bearer {key}"},
+                )
+                if r.status_code == 200:
+                    return "Active"
+                elif r.status_code == 401:
+                    return "Invalid"
+                return f"Error ({r.status_code})"
+
             else:
                 return "Unknown Provider"
 
