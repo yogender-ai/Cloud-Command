@@ -10,6 +10,7 @@ import ApiVault from './pages/ApiVault';
 import RenderHub from './pages/RenderHub';
 import VercelHub from './pages/VercelHub';
 import SettingsPage from './pages/Settings';
+import AnimatedBackground from './components/AnimatedBackground';
 
 function ProtectedRoute({ children }) {
   return isLoggedIn() ? children : <Navigate to="/login" replace />;
@@ -34,6 +35,7 @@ export default function App() {
   return (
     <>
       <Toaster theme="dark" richColors position="bottom-right" />
+      <AnimatedBackground />
       <Routes>
         {/* Public */}
         <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />

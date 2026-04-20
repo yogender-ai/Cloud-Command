@@ -241,11 +241,11 @@ body::after {
 }
 
 ::selection {
-  background: var(--accent-indigo-glow);
-  color: var(--accent-indigo);
+  background: var(--accent-main-glow);
+  color: var(--accent-main);
 }
 
-a { color: var(--accent-indigo); text-decoration: none; }
+a { color: var(--accent-main); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 /* ══════════════════════════════════════
@@ -317,18 +317,12 @@ a:hover { text-decoration: underline; }
   width: 40px;
   height: 40px;
   border-radius: var(--radius-md);
-  background: var(--gradient-primary);
+  background: var(--gradient-main);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  box-shadow: var(--shadow-glow-indigo);
-  animation: iconPulse 4s ease-in-out infinite;
-}
-
-@keyframes iconPulse {
-  0%, 100% { box-shadow: var(--shadow-glow-indigo); }
-  50% { box-shadow: 0 0 45px var(--cursor-color); }
+  box-shadow: 0 0 20px var(--accent-main-glow);
 }
 
 .sidebar-brand-text {
@@ -340,7 +334,7 @@ a:hover { text-decoration: underline; }
   font-size: 16px;
   font-weight: 800;
   letter-spacing: -0.02em;
-  background: var(--gradient-primary);
+  background: var(--gradient-main);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -399,9 +393,9 @@ a:hover { text-decoration: underline; }
 }
 
 .nav-item.active {
-  background: var(--accent-indigo-glow);
-  color: var(--accent-indigo);
-  border-color: rgba(99, 102, 241, 0.15);
+  background: var(--accent-main-glow);
+  color: var(--accent-main);
+  border-color: rgba(255, 255, 255, 0.05);
   font-weight: 600;
 }
 
@@ -413,7 +407,7 @@ a:hover { text-decoration: underline; }
   bottom: 6px;
   width: 3px;
   border-radius: 0 3px 3px 0;
-  background: var(--accent-indigo);
+  background: var(--accent-main);
 }
 
 .nav-item-icon {
@@ -482,6 +476,7 @@ a:hover { text-decoration: underline; }
   border: 2px solid transparent;
   transition: all 0.2s ease;
   position: relative;
+  cursor: pointer;
 }
 
 .theme-dot:hover {
@@ -681,10 +676,10 @@ a:hover { text-decoration: underline; }
 }
 
 .btn-primary {
-  background: var(--gradient-primary);
+  background: var(--gradient-main);
   color: #fff;
   border: none;
-  box-shadow: var(--shadow-glow-indigo);
+  box-shadow: 0 0 20px var(--accent-main-glow);
 }
 
 .btn-primary:hover {
@@ -766,8 +761,8 @@ a:hover { text-decoration: underline; }
 
 .form-input:focus,
 .form-select:focus {
-  border-color: var(--border-focus);
-  box-shadow: 0 0 0 3px var(--accent-indigo-glow), 0 0 20px var(--cursor-color);
+  border-color: var(--accent-main);
+  box-shadow: 0 0 0 3px var(--accent-main-glow);
 }
 
 .form-input-mono {
@@ -1074,16 +1069,6 @@ a:hover { text-decoration: underline; }
   justify-content: center;
 }
 
-.auth-left-glow {
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(ellipse 60% 50% at 30% 40%, var(--mesh-1) 0%, transparent 70%),
-    radial-gradient(ellipse 50% 40% at 70% 70%, var(--mesh-2) 0%, transparent 70%);
-  pointer-events: none;
-  animation: meshShift 25s ease-in-out infinite alternate;
-}
-
 /* Dot grid */
 .auth-left::before {
   content: '';
@@ -1111,7 +1096,6 @@ a:hover { text-decoration: underline; }
   justify-content: center;
   margin-bottom: 28px;
   box-shadow: 0 0 50px var(--cursor-color);
-  animation: iconPulse 4s ease-in-out infinite;
   position: relative;
 }
 
@@ -1196,37 +1180,6 @@ a:hover { text-decoration: underline; }
   color: #5a5a72;
 }
 
-/* Floating blobs */
-.auth-blob {
-  position: absolute;
-  border-radius: 50%;
-  filter: blur(80px);
-  pointer-events: none;
-  animation: blobFloat 8s ease-in-out infinite;
-}
-
-.auth-blob-1 {
-  width: 300px;
-  height: 300px;
-  background: rgba(99,102,241,0.06);
-  bottom: -80px;
-  right: -60px;
-}
-
-.auth-blob-2 {
-  width: 200px;
-  height: 200px;
-  background: rgba(168,85,247,0.05);
-  top: 40px;
-  left: -40px;
-  animation-delay: -4s;
-}
-
-@keyframes blobFloat {
-  0%, 100% { transform: translateY(0) scale(1); }
-  50% { transform: translateY(-20px) scale(1.05); }
-}
-
 /* Code rain container on auth left */
 .auth-code-rain {
   position: absolute;
@@ -1306,7 +1259,6 @@ a:hover { text-decoration: underline; }
   justify-content: center;
   margin-bottom: 24px;
   box-shadow: 0 0 30px var(--cursor-color);
-  animation: iconPulse 4s ease-in-out infinite;
 }
 
 .auth-title {
@@ -1570,10 +1522,11 @@ a:hover { text-decoration: underline; }
   width: 48px;
   height: 48px;
   border-radius: 50%;
-  background: var(--gradient-primary);
+  background: var(--gradient-main);
   border: none;
   color: #fff;
-  box-shadow: var(--shadow-glow-indigo);
+  cursor: pointer;
+  box-shadow: 0 0 20px var(--accent-main-glow);
   align-items: center;
   justify-content: center;
 }

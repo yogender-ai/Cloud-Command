@@ -83,11 +83,11 @@ export default function Sidebar() {
         </nav>
 
         {/* Footer: Theme Switcher + Collapse */}
-        <div className="sidebar-footer">
-          <ThemeSwitcher collapsed={collapsed} />
-          <button className="sidebar-collapse-btn" onClick={() => setCollapsed(!collapsed)}>
+        <div className="sidebar-footer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', borderTop: '1px solid var(--border)' }}>
+          <button className="sidebar-collapse-btn" style={{ flex: 1, marginRight: collapsed ? 0 : 8 }} onClick={() => setCollapsed(!collapsed)}>
             {collapsed ? <ChevronRight size={16} /> : <><ChevronLeft size={16} /> <span>Collapse</span></>}
           </button>
+          {!collapsed && <ThemeSwitcher />}
         </div>
       </aside>
     </>

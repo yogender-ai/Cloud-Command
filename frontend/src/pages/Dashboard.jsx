@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Globe, KeyRound, Server, Triangle, Activity,
-  ArrowUpRight, CheckCircle2, XCircle, Zap, TrendingUp, Users
+  ArrowUpRight, CheckCircle2, XCircle, Zap, TrendingUp, Users,
+  Shield, Flame, Radio
 } from 'lucide-react';
 import {
   AreaChart, Area, ResponsiveContainer, XAxis, YAxis,
@@ -12,19 +13,59 @@ import {
 import { getMonitors, getApiKeySummary, getRenderAccounts, getVercelAccounts, recordVisit, getVisits } from '../api';
 
 const cardVariants = {
-  hidden: { opacity: 0, y: 16 },
-  visible: (i) => ({ opacity: 1, y: 0, transition: { delay: i * 0.08, duration: 0.4, ease: [0.4, 0, 0.2, 1] } }),
+  hidden: { opacity: 0, y: 20 },
+  visible: (i) => ({ opacity: 1, y: 0, transition: { delay: i * 0.07, duration: 0.5, ease: [0.16, 1, 0.3, 1] } }),
 };
 
-function CustomTooltip({ active, payload, label }) {
+/* Custom dark tooltip */
+function DashTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return (
     <div style={{
-      background: 'var(--bg-elevated)', border: '1px solid var(--border)',
-      borderRadius: 10, padding: '10px 14px', fontSize: 12,
+      background: 'rgba(10,10,18,0.95)', backdropFilter: 'blur(12px)',
+      border: '1px solid rgba(99,102,241,0.2)', borderRadius: 10,
+      padding: '10px 14px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
     }}>
-      <p style={{ color: 'var(--text-muted)', marginBottom: 4 }}>{label}</p>
-      <p style={{ color: 'var(--accent-indigo)', fontWeight: 700 }}>{payload[0].value} visits</p>
+      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginBottom: 4, fontWeight: 600 }}>{label}</div>
+      {payload.map((p, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: p.color }} />
+          <span style={{ color: 'rgba(255,255,255,0.7)' }}>{p.name}:</span>
+          <span style={{ fontWeight: 700, color: '#fff', marginLeft: 'auto', fontFamily: 'var(--font-mono)' }}>{p.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* Radial Gauge for uptime */
+function UptimeGauge({ percentage }) {
+  const radius = 58;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (percentage / 100) * circumference;
+  const color = percentage >= 99 ? '#10b981' : percentage >= 90 ? '#f59e0b' : '#f43f5e';
+
+  return (
+    <div className="radial-gauge">
+      <svg width="140" height="140" viewBox="0 0 140 140">
+        <circle className="radial-gauge-bg" cx="70" cy="70" r={radius} />
+        <circle
+          className="radial-gauge-fill"
+          cx="70" cy="70" r={radius}
+          stroke={color}
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          style={{ filter: `drop-shadow(0 0 8px ${color})` }}
+        />
+      </svg>
+      <div className="radial-gauge-text">
+        <span style={{ fontSize: 28, fontWeight: 900, color, letterSpacing: '-0.03em' }}>
+          {percentage}%
+        </span>
+        <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
+          Uptime
+        </span>
+      </div>
     </div>
   );
 }
@@ -50,7 +91,6 @@ export default function Dashboard() {
       setApiSummary(a);
       setRenderAccounts(r);
       setVercelAccounts(v);
-      // Format visits for chart (reverse to chronological order)
       const chartData = [...vis].reverse().map(d => ({
         date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         visits: d.visits,
@@ -62,44 +102,28 @@ export default function Dashboard() {
 
   const monitorsUp = monitors.filter(m => m.status === 'UP').length;
   const monitorsDown = monitors.length - monitorsUp;
-  const uptime = monitors.length > 0 ? ((monitorsUp / monitors.length) * 100).toFixed(1) : '–';
+  const uptimeNum = monitors.length > 0 ? parseFloat(((monitorsUp / monitors.length) * 100).toFixed(1)) : 0;
 
   const stats = [
     {
-      label: 'Sites Monitored',
-      value: monitors.length,
+      label: 'Sites Monitored', value: monitors.length,
       sub: monitors.length > 0 ? `${monitorsDown > 0 ? monitorsDown + ' down' : 'all healthy'}` : 'none yet',
-      icon: Globe,
-      color: '#10b981',
-      bg: 'var(--accent-emerald-glow)',
-      link: '/monitors',
+      icon: Globe, color: '#10b981', bg: 'var(--accent-emerald-glow)', link: '/monitors',
     },
     {
-      label: 'API Keys',
-      value: apiSummary?.total_keys || 0,
+      label: 'API Keys', value: apiSummary?.total_keys || 0,
       sub: `${apiSummary?.active_keys || 0} active`,
-      icon: KeyRound,
-      color: '#a855f7',
-      bg: 'var(--accent-purple-glow)',
-      link: '/api-keys',
+      icon: KeyRound, color: '#a855f7', bg: 'var(--accent-purple-glow)', link: '/api-keys',
     },
     {
-      label: 'Render Accounts',
-      value: renderAccounts.length,
-      sub: 'connected',
-      icon: Server,
-      color: '#34d399',
-      bg: 'var(--accent-emerald-glow)',
-      link: '/render',
+      label: 'Render', value: renderAccounts.length,
+      sub: 'connected', icon: Server, color: '#34d399',
+      bg: 'var(--accent-emerald-glow)', link: '/render',
     },
     {
-      label: 'Vercel Accounts',
-      value: vercelAccounts.length,
-      sub: 'connected',
-      icon: Triangle,
-      color: '#f0f0f5',
-      bg: 'rgba(255,255,255,0.05)',
-      link: '/vercel',
+      label: 'Vercel', value: vercelAccounts.length,
+      sub: 'connected', icon: Triangle, color: '#f0f0f5',
+      bg: 'rgba(255,255,255,0.04)', link: '/vercel',
     },
   ];
 
@@ -123,8 +147,8 @@ export default function Dashboard() {
         <motion.h1
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
-          className="page-title"
-          style={{ fontSize: 34 }}
+          className="gradient-text-animated"
+          style={{ fontSize: 36, fontWeight: 900, letterSpacing: '-0.04em' }}
         >
           Command Center
         </motion.h1>
@@ -135,7 +159,7 @@ export default function Dashboard() {
           className="page-subtitle"
           style={{ fontSize: 15 }}
         >
-          Real-time overview of all your infrastructure, APIs, and deployments.
+          Real-time overview of your infrastructure, APIs, and deployments.
         </motion.p>
       </div>
 
@@ -144,15 +168,9 @@ export default function Dashboard() {
         {stats.map((s, i) => {
           const Icon = s.icon;
           return (
-            <motion.div
-              key={s.label}
-              custom={i}
-              initial="hidden"
-              animate="visible"
-              variants={cardVariants}
-            >
+            <motion.div key={s.label} custom={i} initial="hidden" animate="visible" variants={cardVariants}>
               <Link to={s.link} style={{ textDecoration: 'none', color: 'inherit' }}>
-                <div className="card card-interactive stat-card">
+                <div className="card card-interactive stat-card" style={{ borderLeft: `3px solid ${s.color}` }}>
                   <div className="stat-icon" style={{ background: s.bg }}>
                     <Icon size={20} color={s.color} />
                   </div>
@@ -161,7 +179,7 @@ export default function Dashboard() {
                     <div className="stat-value" style={{ color: s.color }}>{s.value}</div>
                     {s.sub && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{s.sub}</div>}
                   </div>
-                  <ArrowUpRight size={16} color="var(--text-muted)" style={{ marginLeft: 'auto' }} />
+                  <ArrowUpRight size={16} color="var(--text-muted)" style={{ marginLeft: 'auto', opacity: 0.5 }} />
                 </div>
               </Link>
             </motion.div>
@@ -169,44 +187,41 @@ export default function Dashboard() {
         })}
       </div>
 
-      {/* Uptime + System Status + Tokens */}
+      {/* Uptime Gauge + System Status + Tokens */}
       <div className="grid grid-3" style={{ marginBottom: 32 }}>
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
+          initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}
           className="card"
-          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, position: 'relative', overflow: 'hidden' }}
+          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32 }}
         >
-          <div style={{ position: 'absolute', top: 10, right: 10, opacity: 0.05 }}>
-            <TrendingUp size={80} />
-          </div>
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: 8 }}>
-            Global Uptime
-          </div>
-          <div style={{ fontSize: 48, fontWeight: 900, color: parseFloat(uptime) >= 99 ? 'var(--accent-emerald)' : parseFloat(uptime) >= 90 ? 'var(--accent-amber)' : 'var(--accent-rose)', letterSpacing: '-0.03em' }}>
-            {uptime}%
-          </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-            {monitorsUp}/{monitors.length} sites up
+          {monitors.length > 0 ? (
+            <UptimeGauge percentage={uptimeNum} />
+          ) : (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: 8 }}>
+                Global Uptime
+              </div>
+              <div style={{ fontSize: 42, fontWeight: 900, color: 'var(--text-muted)' }}>–</div>
+            </>
+          )}
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+            {monitors.length > 0 ? `${monitorsUp}/${monitors.length} sites up` : 'No monitors'}
           </div>
         </motion.div>
 
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
+          initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.42 }}
           className="card"
           style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32 }}
         >
-          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: 12 }}>
             System Status
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
             <div style={{
-              width: 10, height: 10, borderRadius: '50%',
+              width: 14, height: 14, borderRadius: '50%',
               background: monitorsDown > 0 ? 'var(--accent-rose)' : 'var(--accent-emerald)',
-              boxShadow: monitorsDown > 0 ? '0 0 16px var(--accent-rose)' : '0 0 16px var(--accent-emerald)',
+              boxShadow: monitorsDown > 0 ? '0 0 20px var(--accent-rose)' : '0 0 20px var(--accent-emerald)',
               animation: 'pulse-dot 2s ease infinite',
             }} />
             <span style={{
@@ -216,26 +231,34 @@ export default function Dashboard() {
               {monitorsDown > 0 ? `${monitorsDown} Degraded` : 'Fully Operational'}
             </span>
           </div>
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
             {monitors.length === 0 ? 'No monitors configured' : 'All systems monitored'}
           </div>
         </motion.div>
 
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.5 }}
+          initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
           className="card"
-          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32 }}
+          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, position: 'relative', overflow: 'hidden' }}
         >
+          <div style={{ position: 'absolute', top: 12, right: 12, opacity: 0.04 }}>
+            <Zap size={70} />
+          </div>
           <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: 8 }}>
             Tokens Used Today
           </div>
-          <div style={{ fontSize: 36, fontWeight: 900, color: 'var(--accent-purple)', letterSpacing: '-0.02em' }}>
+          <div style={{ fontSize: 38, fontWeight: 900, color: 'var(--accent-purple)', letterSpacing: '-0.02em' }}>
             {(apiSummary?.tokens_today || 0).toLocaleString()}
           </div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-            <Zap size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> across all keys
+          <div style={{ display: 'flex', gap: 16, marginTop: 10, fontSize: 11, color: 'var(--text-muted)' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Radio size={10} color="var(--accent-indigo)" /> {apiSummary?.requests_today || 0} requests
+            </span>
+            {(apiSummary?.errors_today || 0) > 0 && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--accent-rose)' }}>
+                <Flame size={10} /> {apiSummary.errors_today} errors
+              </span>
+            )}
           </div>
         </motion.div>
       </div>
@@ -243,9 +266,7 @@ export default function Dashboard() {
       {/* Platform Visits Chart */}
       {visits.length > 0 && (
         <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.55 }}
+          initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.55 }}
           style={{ marginBottom: 32 }}
         >
           <div className="chart-container">
@@ -253,28 +274,24 @@ export default function Dashboard() {
               <h3 className="chart-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
                 <Users size={16} style={{ display: 'inline' }} /> Platform Visits
               </h3>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
                 {totalVisits.toLocaleString()} total · last 30 days
               </span>
             </div>
-            <div style={{ height: 180 }}>
+            <div style={{ height: 200 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={visits}>
                   <defs>
                     <linearGradient id="visitGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                      <stop offset="5%" stopColor="var(--accent-indigo)" stopOpacity={0.25} />
+                      <stop offset="95%" stopColor="var(--accent-indigo)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="var(--text-muted)" interval="preserveStartEnd" />
-                  <YAxis tick={{ fontSize: 11 }} stroke="var(--text-muted)" width={40} />
-                  <Tooltip content={<CustomTooltip />} />
-                  <Area
-                    type="monotone" dataKey="visits"
-                    stroke="#6366f1" fill="url(#visitGrad)"
-                    strokeWidth={2.5}
-                  />
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} stroke="transparent" interval="preserveStartEnd" />
+                  <YAxis tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} stroke="transparent" width={35} />
+                  <Tooltip content={<DashTooltip />} />
+                  <Area type="monotone" dataKey="visits" stroke="var(--accent-indigo)" fill="url(#visitGrad)" strokeWidth={2.5} dot={false} activeDot={{ r: 4, fill: 'var(--accent-indigo)', stroke: '#fff', strokeWidth: 2 }} name="Visits" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -282,30 +299,25 @@ export default function Dashboard() {
         </motion.div>
       )}
 
-      {/* Quick Status Grid */}
+      {/* Quick Monitor Status Grid */}
       {monitors.length > 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6 }}
-        >
+        <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.65 }}>
           <div className="card" style={{ padding: 24 }}>
-            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16 }}>Monitor Status</h3>
+            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Activity size={16} color="var(--accent-indigo)" /> Monitor Status
+            </h3>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {monitors.map(m => (
-                <Link
-                  key={m.id}
-                  to="/monitors"
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '8px 14px', borderRadius: 'var(--radius-md)',
-                    background: m.status === 'UP' ? 'var(--accent-emerald-glow)' : 'var(--accent-rose-glow)',
-                    border: `1px solid ${m.status === 'UP' ? 'rgba(16,185,129,0.2)' : 'rgba(244,63,94,0.2)'}`,
-                    textDecoration: 'none', color: 'inherit', fontSize: 13, fontWeight: 600,
-                    transition: 'transform 0.2s',
-                  }}
-                  onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.03)'}
-                  onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
+                <Link key={m.id} to="/monitors" style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '8px 14px', borderRadius: 'var(--radius-md)',
+                  background: m.status === 'UP' ? 'var(--accent-emerald-glow)' : 'var(--accent-rose-glow)',
+                  border: `1px solid ${m.status === 'UP' ? 'rgba(16,185,129,0.15)' : 'rgba(244,63,94,0.15)'}`,
+                  textDecoration: 'none', color: 'inherit', fontSize: 13, fontWeight: 600,
+                  transition: 'all 0.25s cubic-bezier(0.4,0,0.2,1)',
+                }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = m.status === 'UP' ? '0 0 16px rgba(16,185,129,0.2)' : '0 0 16px rgba(244,63,94,0.2)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}
                 >
                   {m.status === 'UP'
                     ? <CheckCircle2 size={14} color="var(--accent-emerald)" />
@@ -321,13 +333,9 @@ export default function Dashboard() {
         </motion.div>
       )}
 
-      {/* Empty State — no data at all */}
+      {/* Empty State */}
       {monitors.length === 0 && !apiSummary?.total_keys && renderAccounts.length === 0 && vercelAccounts.length === 0 && (
-        <motion.div
-          initial={{ opacity: 0, y: 12 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6 }}
-        >
+        <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}>
           <div className="card" style={{ padding: 48, textAlign: 'center' }}>
             <div style={{ width: 64, height: 64, borderRadius: 'var(--radius-lg)', background: 'var(--accent-indigo-glow)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
               <Activity size={28} color="var(--accent-indigo)" />
