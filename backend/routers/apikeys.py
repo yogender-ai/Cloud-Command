@@ -289,7 +289,32 @@ def get_summary(db: Session = Depends(get_db), user: models.User = Depends(get_c
             )
             .scalar()
         ) or 0
-        history.append({"date": day.isoformat(), "total_tokens": day_tokens})
+        
+        total_requests = (
+            db.query(models.ApiUsageLog)
+            .filter(
+                models.ApiUsageLog.api_key_id.in_(key_ids),
+                func.date(models.ApiUsageLog.timestamp) == day,
+            )
+            .count()
+        )
+        
+        failed_requests = (
+            db.query(models.ApiUsageLog)
+            .filter(
+                models.ApiUsageLog.api_key_id.in_(key_ids),
+                func.date(models.ApiUsageLog.timestamp) == day,
+                models.ApiUsageLog.is_error == True
+            )
+            .count()
+        )
+        
+        history.append({
+            "date": day.isoformat(), 
+            "total_tokens": day_tokens,
+            "total_requests": total_requests,
+            "failed_requests": failed_requests
+        })
 
     return {
         "total_keys": total,

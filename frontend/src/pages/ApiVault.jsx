@@ -5,7 +5,7 @@ import {
   Trash2, Shield, Zap, X, BarChart3, Lock, Mail, ShieldOff, Filter,
   ChevronRight, Calculator, Check, Copy
 } from 'lucide-react';
-import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid } from 'recharts';
+import { AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid, ComposedChart, Bar, Line, BarChart } from 'recharts';
 import { toast } from 'sonner';
 import { getApiKeys, addApiKey, deleteApiKey, updateApiKey, checkApiKey, getApiKeySummary, getProfile, requestVaultOtp, verifyVaultOtp } from '../api';
 import { CategoryEditor } from '../components/CategoryEditor';
@@ -292,29 +292,70 @@ export default function ApiVault() {
         </div>
       )}
 
-      {/* Usage chart */}
-      {summary?.usage_history?.length > 0 && (
-        <div className="chart-container" style={{ marginBottom: 24 }}>
-          <h3 className="chart-title"><BarChart3 size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 8 }} />7-Day Token Usage</h3>
-          <div style={{ height: 200 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={summary.usage_history}>
-                <defs>
-                  <linearGradient id="tokenGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="var(--text-muted)" tickFormatter={d => d.slice(5)} />
-                <YAxis tick={{ fontSize: 11 }} stroke="var(--text-muted)" width={50} />
-                <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10 }} />
-                <Area activeDot={{ outline: 'none' }} type="monotone" dataKey="total_tokens" stroke="#a855f7" fill="url(#tokenGrad)" strokeWidth={2.5} name="Tokens" />
-              </AreaChart>
-            </ResponsiveContainer>
+      {/* Analytics Dashboard */}
+      {summary?.usage_history?.length > 0 && (() => {
+        const processedHistory = summary.usage_history.map(d => ({
+          ...d,
+          success_rate: d.total_requests > 0 ? Math.round(((d.total_requests - d.failed_requests) / d.total_requests) * 100) : 0
+        }));
+
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 24, marginBottom: 24 }}>
+            <div className="chart-container">
+              <h3 className="chart-title"><Zap size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 8, color: 'var(--accent-purple)' }} />7-Day Token Usage</h3>
+              <div style={{ height: 180 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={processedHistory}>
+                    <defs>
+                      <linearGradient id="tokenGrad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#a855f7" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#a855f7" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="var(--text-muted)" tickFormatter={d => d.slice(5)} />
+                    <YAxis tick={{ fontSize: 11 }} stroke="var(--text-muted)" width={35} />
+                    <Tooltip cursor={{fill: 'var(--bg-hover)'}} contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
+                    <Area type="monotone" dataKey="total_tokens" stroke="#a855f7" fill="url(#tokenGrad)" strokeWidth={2.5} name="Tokens" />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="chart-container">
+              <h3 className="chart-title"><BarChart3 size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 8, color: 'var(--accent-indigo)' }} />Total API Requests</h3>
+              <div style={{ height: 180 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <ComposedChart data={processedHistory}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="var(--text-muted)" tickFormatter={d => d.slice(5)} />
+                    <YAxis yAxisId="left" tick={{ fontSize: 11 }} stroke="var(--text-muted)" width={30} allowDecimals={false} />
+                    <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 11 }} stroke="var(--text-muted)" width={35} domain={[0, 100]} tickFormatter={v => `${v}%`} />
+                    <Tooltip cursor={{fill: 'var(--bg-hover)'}} contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
+                    <Bar yAxisId="left" dataKey="total_requests" fill="rgba(99,102,241,0.5)" radius={[3,3,0,0]} name="Requests" barSize={12} />
+                    <Line yAxisId="right" type="step" dataKey="success_rate" stroke="#10b981" strokeWidth={2} dot={{ r: 3, fill: '#10b981' }} name="Success Rate %" />
+                  </ComposedChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="chart-container">
+              <h3 className="chart-title"><AlertCircle size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 8, color: 'var(--accent-rose)' }} />Total API Errors</h3>
+              <div style={{ height: 180 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={processedHistory}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="date" tick={{ fontSize: 11 }} stroke="var(--text-muted)" tickFormatter={d => d.slice(5)} />
+                    <YAxis tick={{ fontSize: 11 }} stroke="var(--text-muted)" width={30} allowDecimals={false} />
+                    <Tooltip cursor={{fill: 'var(--bg-hover)'}} contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 12 }} />
+                    <Bar dataKey="failed_requests" fill="#f43f5e" radius={[3,3,0,0]} name="Errors" barSize={12} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Category filter */}
       {categories.length > 1 && (

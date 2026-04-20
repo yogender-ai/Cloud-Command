@@ -59,6 +59,8 @@ def _safe_migrate():
         "ALTER TABLE monitors          ADD COLUMN IF NOT EXISTS category VARCHAR(100)",
         "ALTER TABLE api_keys          ADD COLUMN IF NOT EXISTS category VARCHAR(100)",
         "ALTER TABLE platform_accounts ADD COLUMN IF NOT EXISTS category VARCHAR(100)",
+        "ALTER TABLE api_usage_logs    ADD COLUMN IF NOT EXISTS status_code INTEGER DEFAULT 200",
+        "ALTER TABLE api_usage_logs    ADD COLUMN IF NOT EXISTS is_error BOOLEAN DEFAULT FALSE",
     ]
     with engine.connect() as conn:
         for sql in migrations:

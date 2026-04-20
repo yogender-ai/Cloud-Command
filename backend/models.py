@@ -103,6 +103,8 @@ class ApiUsageLog(Base):
     id = Column(Integer, primary_key=True, index=True)
     api_key_id = Column(Integer, ForeignKey("api_keys.id", ondelete="CASCADE"), nullable=False)
     tokens_used = Column(Integer, default=0)
+    status_code = Column(Integer, default=200)
+    is_error = Column(Boolean, default=False)
     timestamp = Column(DateTime(timezone=True), default=utcnow)
 
     api_key = relationship("ApiKey", back_populates="usage_logs")

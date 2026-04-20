@@ -11,8 +11,14 @@ from config import settings
 
 router = APIRouter(prefix="/api/gateway", tags=["gateway"])
 
-def log_api_usage(db: Session, api_key_id: int, tokens_used: int):
-    log = models.ApiUsageLog(api_key_id=api_key_id, tokens_used=tokens_used, timestamp=datetime.now(timezone.utc))
+def log_api_usage(db: Session, api_key_id: int, tokens_used: int, status_code: int = 200, is_error: bool = False):
+    log = models.ApiUsageLog(
+        api_key_id=api_key_id, 
+        tokens_used=tokens_used, 
+        status_code=status_code,
+        is_error=is_error,
+        timestamp=datetime.now(timezone.utc)
+    )
     db.add(log)
     db.commit()
 
@@ -145,8 +151,7 @@ async def proxy_gateway(
         except Exception:
             pass
             
-        if tracked_tokens > 0:
-            background_tasks.add_task(log_api_usage, db, api_key.id, tracked_tokens)
+        background_tasks.add_task(log_api_usage, db, api_key.id, tracked_tokens, resp.status_code, resp.status_code >= 400)
             
         filtered_headers = {k: v for k, v in resp.headers.items() if k.lower() not in ("content-length", "content-encoding")}
         return Response(content=resp_bytes, status_code=resp.status_code, headers=filtered_headers)
@@ -173,12 +178,12 @@ async def proxy_gateway(
                 yield chunk
         finally:
             await client.aclose()
-            if tracked_tokens > 0:
-                db_session = models.SessionLocal()
-                try:
-                    log_api_usage(db_session, api_key.id, tracked_tokens)
-                finally:
-                    db_session.close()
+            
+            db_session = models.SessionLocal()
+            try:
+                log_api_usage(db_session, api_key.id, tracked_tokens, resp.status_code, resp.status_code >= 400)
+            finally:
+                db_session.close()
 
     resp_headers = {k: v for k, v in resp.headers.items() if k.lower() not in ("content-length", "content-encoding")}
     return StreamingResponse(stream_generator(), status_code=resp.status_code, headers=resp_headers)
