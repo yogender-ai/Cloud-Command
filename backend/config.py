@@ -11,6 +11,7 @@ class Settings:
     JWT_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
     ENCRYPTION_KEY: str = os.getenv("ENCRYPTION_KEY", "")
+    GATEWAY_SECRET: str = os.getenv("GATEWAY_SECRET", "super-secret-gateway-token-123")
 
     SMTP_EMAIL: str = os.getenv("SMTP_EMAIL", "")
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
