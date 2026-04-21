@@ -50,24 +50,25 @@ async def ping_url(client: httpx.AsyncClient, url: str) -> tuple[str, int]:
     """
     loop = asyncio.get_event_loop()
 
-    # --- Attempt HEAD first ---
-    try:
-        start = loop.time()
-        resp = await client.head(url, headers=HEADERS)
-        latency = int((loop.time() - start) * 1000)
+    is_hf_space = "hf.space" in url.lower()
 
-        # 405 = HEAD not allowed, try GET instead
-        if resp.status_code == 405:
-            raise httpx.HTTPStatusError("HEAD not allowed", request=resp.request, response=resp)
+    # --- Attempt HEAD first (unless it's a Hugging Face space) ---
+    if not is_hf_space:
+        try:
+            start = loop.time()
+            resp = await client.head(url, headers=HEADERS)
+            latency = int((loop.time() - start) * 1000)
 
-        # Treat 1xx-4xx as UP (site is reachable and responding)
-        # Only 5xx means the server itself is broken
-        if resp.status_code < 500:
-            return "UP", latency
-        return "DOWN", latency
+            # 405 = HEAD not allowed, try GET instead
+            if resp.status_code == 405:
+                raise httpx.HTTPStatusError("HEAD not allowed", request=resp.request, response=resp)
 
-    except (httpx.HTTPStatusError, Exception):
-        pass  # fall through to GET
+            if resp.status_code < 500:
+                return "UP", latency
+            return "DOWN", latency
+
+        except (httpx.HTTPStatusError, Exception):
+            pass  # fall through to GET
 
     # --- Fallback to GET ---
     try:
@@ -78,6 +79,8 @@ async def ping_url(client: httpx.AsyncClient, url: str) -> tuple[str, int]:
 
         if resp.status_code < 500:
             return "UP", latency
+        if is_hf_space and resp.status_code == 503:
+            return "AWAKENING", latency
         return "DOWN", latency
 
     except httpx.TimeoutException:
@@ -140,10 +143,12 @@ async def ping_all_monitors():
             if raw_status == "DOWN":
                 _consecutive_failures[monitor_id] = _consecutive_failures.get(monitor_id, 0) + 1
                 if _consecutive_failures[monitor_id] < FAILURES_BEFORE_DOWN:
-                    # Not confirmed down yet — keep previous status, still log it
                     status = monitor.status  # keep current
                 else:
                     status = "DOWN"
+            elif raw_status == "AWAKENING":
+                _consecutive_failures[monitor_id] = 0  # reset failure count while booting
+                status = "AWAKENING"
             else:
                 _consecutive_failures[monitor_id] = 0  # reset on success
                 status = "UP"

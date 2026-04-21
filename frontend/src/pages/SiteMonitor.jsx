@@ -47,6 +47,7 @@ function MonitorCard({ monitor, onDelete, onClick, onCategoryChange, allCategori
   }, [monitor.id]);
 
   const isUp = monitor.status === 'UP';
+  const isAwakening = monitor.status === 'AWAKENING';
   const borderColor = monitor.category ? getCategoryColor(monitor.category)?.border : undefined;
 
   return (
@@ -60,8 +61,8 @@ function MonitorCard({ monitor, onDelete, onClick, onCategoryChange, allCategori
           </p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginLeft: 8 }}>
-          <span className={`badge ${isUp ? 'badge-up badge-live' : 'badge-down'}`}>
-            {isUp ? <CheckCircle2 size={10} /> : <XCircle size={10} />} {monitor.status}
+          <span className={`badge ${isUp ? 'badge-up badge-live' : isAwakening ? 'badge-warning' : 'badge-down'}`}>
+            {isUp ? <CheckCircle2 size={10} /> : isAwakening ? <Clock size={10} /> : <XCircle size={10} />} {monitor.status}
           </span>
           <button className="btn btn-ghost btn-icon" onClick={(e) => { e.stopPropagation(); onDelete(monitor.id); }}>
             <Trash2 size={14} color="var(--accent-rose)" />
@@ -83,12 +84,12 @@ function MonitorCard({ monitor, onDelete, onClick, onCategoryChange, allCategori
           <AreaChart data={logs}>
             <defs>
               <linearGradient id={`g-${monitor.id}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={isUp ? '#10b981' : '#f43f5e'} stopOpacity={0.3} />
-                <stop offset="95%" stopColor={isUp ? '#10b981' : '#f43f5e'} stopOpacity={0} />
+                <stop offset="5%" stopColor={isUp ? '#10b981' : isAwakening ? '#f59e0b' : '#f43f5e'} stopOpacity={0.3} />
+                <stop offset="95%" stopColor={isUp ? '#10b981' : isAwakening ? '#f59e0b' : '#f43f5e'} stopOpacity={0} />
               </linearGradient>
             </defs>
             <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12 }} labelStyle={{ display: 'none' }} formatter={(v) => [`${v}ms`, 'Latency']} />
-            <Area type="monotone" dataKey="latency" stroke={isUp ? '#10b981' : '#f43f5e'} fill={`url(#g-${monitor.id})`} strokeWidth={2} />
+            <Area type="monotone" dataKey="latency" stroke={isUp ? '#10b981' : isAwakening ? '#f59e0b' : '#f43f5e'} fill={`url(#g-${monitor.id})`} strokeWidth={2} />
           </AreaChart>
         </ResponsiveContainer>
       </div>
@@ -107,6 +108,7 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
   const [inspecting, setInspecting] = useState(false);
   const [analytics, setAnalytics] = useState(null);
   const isUp = monitor.status === 'UP';
+  const isAwakening = monitor.status === 'AWAKENING';
 
   useEffect(() => {
     const intv = setInterval(() => {
@@ -154,7 +156,7 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
           <div>
             <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               {monitor.name}
-              <span className={`badge ${isUp ? 'badge-up' : 'badge-down'}`}>{monitor.status}</span>
+              <span className={`badge ${isUp ? 'badge-up' : isAwakening ? 'badge-warning' : 'badge-down'}`}>{monitor.status}</span>
               <CategoryBadge category={monitor.category} />
             </h2>
             <a href={monitor.url} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
@@ -172,7 +174,7 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
           {[
-            { label: 'Status', value: monitor.status, color: isUp ? 'var(--accent-emerald)' : 'var(--accent-rose)' },
+            { label: 'Status', value: monitor.status, color: isUp ? 'var(--accent-emerald)' : isAwakening ? 'var(--accent-amber)' : 'var(--accent-rose)' },
             { label: 'Avg Latency', value: `${avgLatency}ms`, color: 'var(--accent-indigo)' },
             { label: 'Uptime', value: `${uptimePct}%`, color: 'var(--accent-emerald)' },
             { label: 'Total Checks', value: logs.length, color: 'var(--text-primary)' },
@@ -207,8 +209,8 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
                   <AreaChart data={logs}>
                     <defs>
                       <linearGradient id="colorBig" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={isUp ? '#10b981' : '#f43f5e'} stopOpacity={0.4} />
-                        <stop offset="95%" stopColor={isUp ? '#10b981' : '#f43f5e'} stopOpacity={0} />
+                        <stop offset="5%" stopColor={isUp ? '#10b981' : isAwakening ? '#f59e0b' : '#f43f5e'} stopOpacity={0.4} />
+                        <stop offset="95%" stopColor={isUp ? '#10b981' : isAwakening ? '#f59e0b' : '#f43f5e'} stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
@@ -216,7 +218,7 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
                     <YAxis stroke="var(--text-muted)" tick={{ fontSize: 11 }} tickFormatter={v => `${v}ms`} width={50} />
                     <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10 }}
                       labelFormatter={l => new Date(l).toLocaleString()} formatter={v => [`${v} ms`, 'Latency']} />
-                    <Area type="monotone" dataKey="latency" stroke={isUp ? '#10b981' : '#f43f5e'} fill="url(#colorBig)" strokeWidth={2.5} />
+                    <Area type="monotone" dataKey="latency" stroke={isUp ? '#10b981' : isAwakening ? '#f59e0b' : '#f43f5e'} fill="url(#colorBig)" strokeWidth={2.5} />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -228,7 +230,7 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
                   {logs.slice().reverse().slice(0, 30).map(log => (
                     <tr key={log.id}>
                       <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{new Date(log.created_at).toLocaleString()}</td>
-                      <td><span className={`badge badge-sm ${log.status === 'UP' ? 'badge-up' : 'badge-down'}`}>{log.status}</span></td>
+                      <td><span className={`badge badge-sm ${log.status === 'UP' ? 'badge-up' : log.status === 'AWAKENING' ? 'badge-warning' : 'badge-down'}`}>{log.status}</span></td>
                       <td style={{ fontFamily: 'var(--font-mono)' }}>{log.latency} ms</td>
                     </tr>
                   ))}

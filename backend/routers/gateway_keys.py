@@ -13,11 +13,11 @@ router = APIRouter(prefix="/api/gateway-keys", tags=["gateway_keys"])
 def _hash_key(key: str) -> str:
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
-@router.get("/", response_model=List[schemas.GatewayApiKeyResponse])
+@router.get("", response_model=List[schemas.GatewayApiKeyResponse])
 def get_gateway_keys(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     return db.query(models.GatewayApiKey).filter(models.GatewayApiKey.user_id == current_user.id).all()
 
-@router.post("/", response_model=schemas.GatewayApiKeyRevealResponse)
+@router.post("", response_model=schemas.GatewayApiKeyRevealResponse)
 def create_gateway_key(key_in: schemas.GatewayApiKeyCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     # Generate the actual token string
     raw_token = "cc-sk-" + secrets.token_urlsafe(32)
