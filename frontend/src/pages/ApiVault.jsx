@@ -15,7 +15,7 @@ import {
   getApiKeys, addApiKey, deleteApiKey, updateApiKey, checkApiKey, 
   getApiKeySummary, getProfile, requestVaultOtp, verifyVaultOtp,
   getKeyGroups, createKeyGroup, updateKeyGroup, deleteKeyGroup,
-  addGroupMember, removeGroupMember, updateGroupMember, revealApiKey
+  addGroupMember, removeGroupMember, updateGroupMember
 } from '../api';
 import { CategoryEditor } from '../components/CategoryEditor';
 
@@ -164,85 +164,7 @@ function DetailModal({ apiKey, onClose }) {
   );
 }
 
-// ── One-Time Key Reveal Modal ──
-function RevealModal({ revealKey, onClose, vaultUnlocked }) {
-  const [keyString, setKeyString] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [copied, setCopied] = useState(false);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    if (!vaultUnlocked) {
-      setError("Vault is locked. Cannot decrypt key.");
-      setLoading(false);
-      return;
-    }
-    revealApiKey(revealKey.id)
-      .then(res => {
-        setKeyString(res.key_value);
-        setLoading(false);
-      })
-      .catch(err => {
-        setError(err.response?.data?.detail || "Failed to decrypt key");
-        setLoading(false);
-      });
-  }, [revealKey, vaultUnlocked]);
-
-  const handleCopy = () => {
-    if (keyString) {
-      navigator.clipboard.writeText(keyString);
-      setCopied(true);
-      toast.success("API key copied to clipboard");
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  return (
-    <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
-      <motion.div className="modal-panel" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} onClick={e => e.stopPropagation()}>
-        <div className="modal-header">
-          <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <Eye size={20} color="var(--accent-amber)" /> Reveal API Key
-          </h2>
-          <button className="btn btn-ghost btn-icon" onClick={onClose}><X size={18} /></button>
-        </div>
-        
-        <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>
-            For security reasons, this key is only shown once and will auto-hide. Do not share it with anyone.
-          </p>
-          {!loading && !error && (
-            <p style={{ color: 'var(--accent-amber)', fontSize: 13, marginTop: 8, fontWeight: 600 }}>
-              Auto-hiding in <Countdown seconds={30} onExpire={onClose} />
-            </p>
-          )}
-        </div>
-
-        {loading ? (
-          <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}><div className="spinner" /></div>
-        ) : error ? (
-          <div style={{ background: 'var(--accent-rose-glow)', color: 'var(--accent-rose)', padding: 16, borderRadius: 12, textAlign: 'center', border: '1px solid rgba(244,63,94,0.2)' }}>
-            <ShieldOff size={24} style={{ margin: '0 auto 8px' }} />
-            {error}
-          </div>
-        ) : (
-          <div style={{ display: 'flex', gap: 8 }}>
-            <div style={{ 
-              flex: 1, background: 'var(--bg-input)', padding: '16px 20px', borderRadius: 12, 
-              fontFamily: 'var(--font-mono)', fontSize: 15, wordBreak: 'break-all', 
-              border: '1px solid var(--border)', color: 'var(--text-primary)'
-            }}>
-              {keyString}
-            </div>
-            <button className="btn btn-primary btn-icon" style={{ width: 54, height: 54, flexShrink: 0 }} onClick={handleCopy} title="Copy Key">
-              {copied ? <Check size={20} /> : <Copy size={20} />}
-            </button>
-          </div>
-        )}
-      </motion.div>
-    </motion.div>
-  );
-}
+// ── One-Time Key Reveal Modal Removed ──
 
 export default function ApiVault() {
   const [keys, setKeys] = useState([]);
@@ -255,7 +177,6 @@ export default function ApiVault() {
   const [showAdd, setShowAdd] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [manageGroup, setManageGroup] = useState(null);
-  const [revealKey, setRevealKey] = useState(null);
   
   // Forms
   const [form, setForm] = useState({ name: '', provider: 'OpenAI', category: '', key_value: '' });
@@ -352,8 +273,6 @@ export default function ApiVault() {
         setShowCreateGroup(true);
       } else if (requireOtpFor?.type === 'delete') {
         executeDelete(requireOtpFor.id);
-      } else if (requireOtpFor?.type === 'reveal') {
-        setRevealKey(requireOtpFor.key);
       } else if (requireOtpFor?.type === 'manage_group') {
         setManageGroup(requireOtpFor.group);
       }
@@ -368,7 +287,6 @@ export default function ApiVault() {
       if (action === 'add') setShowAdd(true);
       else if (action === 'create_group') setShowCreateGroup(true);
       else if (action.type === 'delete') executeDelete(action.id);
-      else if (action.type === 'reveal') setRevealKey(action.key);
       else if (action.type === 'manage_group') setManageGroup(action.group);
     } else {
       handleSendOtp(action);
@@ -836,11 +754,8 @@ export default function ApiVault() {
                                     suggestions={allCategories.filter(c => c !== key.category)}
                                     onSave={cat => handleCategoryChange(key.id, cat)}
                                   />
-                                  <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><KeyRound size={13} style={{ opacity: 0.5 }} /> ********************</span>
-                                    <button className="btn btn-ghost btn-sm" style={{ padding: 4 }} onClick={(e) => { e.stopPropagation(); attemptAction({ type: 'reveal', key }); }} title="Reveal Key">
-                                      <Eye size={14} color="var(--accent-indigo)" />
-                                    </button>
+                                  <div onClick={() => setSelectedKey(key)} style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                                    <KeyRound size={13} style={{ opacity: 0.5 }} /> ********************
                                   </div>
                                   {/* Mini stats */}
                                   {pkData && (
@@ -878,10 +793,6 @@ export default function ApiVault() {
       
       <AnimatePresence>
         {selectedKey && <DetailModal apiKey={selectedKey} onClose={() => setSelectedKey(null)} />}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {revealKey && <RevealModal revealKey={revealKey} onClose={() => setRevealKey(null)} vaultUnlocked={vaultUnlocked} />}
       </AnimatePresence>
 
       <AnimatePresence>

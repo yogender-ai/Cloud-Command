@@ -251,26 +251,6 @@ async def recheck_key(
     key.last_checked = datetime.now(timezone.utc)
     db.commit()
     db.refresh(key)
-    key.tokens_used = (
-        db.query(func.sum(models.ApiUsageLog.tokens_used))
-        .filter(models.ApiUsageLog.api_key_id == key.id)
-        .scalar()
-    ) or 0
-    return key
-
-
-@router.post("/{key_id}/reveal", response_model=schemas.ApiKeyRevealResponse)
-def reveal_key(
-    key_id: int,
-    db: Session = Depends(get_db),
-    user: models.User = Depends(get_current_user),
-):
-    """Reveal the full decrypted API key. Vault must be unlocked (OTP verified)."""
-    key = (
-        db.query(models.ApiKey)
-        .filter(models.ApiKey.id == key_id, models.ApiKey.user_id == user.id)
-        .first()
-    )
     if not key:
         raise HTTPException(status_code=404, detail="API key not found")
 

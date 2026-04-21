@@ -437,24 +437,25 @@ a:hover { text-decoration: underline; }
   gap: 8px;
 }
 
-.sidebar-collapse-btn-new {
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--text-muted);
+.sidebar-collapse-btn {
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
+  gap: 8px;
+  padding: 8px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-family: var(--font-sans);
   transition: all 0.2s ease;
 }
 
-.sidebar-collapse-btn-new:hover {
+.sidebar-collapse-btn:hover {
   background: var(--bg-card);
-  color: var(--text-primary);
-  border-color: var(--border);
+  color: var(--text-secondary);
 }
 
 /* Theme Switcher */

@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   User, Bell, LogOut, Shield, Mail, Lock, Eye, EyeOff,
-  Calendar, Key, CheckCircle2, Zap, AlertTriangle, ArrowRight
+  Calendar, Key, CheckCircle2, Zap, AlertTriangle, ArrowRight,
+  Server, Copy, Check, Trash2, X, Plus
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { removeToken } from '../auth';
-import { requestOtp, verifyOtp, getProfile, changePassword } from '../api';
+import { requestOtp, verifyOtp, getProfile, changePassword, getGatewayKeys, createGatewayKey, deleteGatewayKey } from '../api';
 
 // Password strength calculator
 function getStrength(pw) {
@@ -46,6 +47,8 @@ function SectionHeader({ icon: Icon, iconBg, title, subtitle }) {
 export default function SettingsPage() {
   const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
+  
+  // Notification & Security
   const [notifEmail, setNotifEmail] = useState('');
   const [otp, setOtp] = useState('');
   const [otpStep, setOtpStep] = useState(1);
@@ -56,8 +59,31 @@ export default function SettingsPage() {
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [passLoading, setPassLoading] = useState(false);
+  
+  // Gateway Keys
+  const [gatewayKeys, setGatewayKeys] = useState([]);
+  const [loadingKeys, setLoadingKeys] = useState(true);
+  const [showCreateKey, setShowCreateKey] = useState(false);
+  const [newKeyName, setNewKeyName] = useState('');
+  const [creatingKey, setCreatingKey] = useState(false);
+  const [revealedKey, setRevealedKey] = useState(null);
+  const [copied, setCopied] = useState(false);
 
-  useEffect(() => { getProfile().then(setProfile).catch(() => {}); }, []);
+  useEffect(() => { 
+    getProfile().then(setProfile).catch(() => {}); 
+    loadGatewayKeys();
+  }, []);
+
+  const loadGatewayKeys = async () => {
+    try {
+      const keys = await getGatewayKeys();
+      setGatewayKeys(keys);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingKeys(false);
+    }
+  };
 
   const handleRequestOtp = async (e) => {
     e.preventDefault(); setNotifLoading(true);
@@ -85,6 +111,42 @@ export default function SettingsPage() {
     try { await changePassword(currentPass, newPass); toast.success('Password updated!'); setCurrentPass(''); setNewPass(''); setConfirmPass(''); }
     catch (err) { toast.error(err.response?.data?.detail || 'Failed to change password'); }
     finally { setPassLoading(false); }
+  };
+  
+  const handleCreateGatewayKey = async (e) => {
+    e.preventDefault();
+    setCreatingKey(true);
+    try {
+      const res = await createGatewayKey({ name: newKeyName });
+      setRevealedKey(res.key_value);
+      setNewKeyName('');
+      setShowCreateKey(false);
+      loadGatewayKeys();
+    } catch (err) {
+      toast.error('Failed to create Gateway API Key');
+    } finally {
+      setCreatingKey(false);
+    }
+  };
+  
+  const handleDeleteGatewayKey = async (id) => {
+    if (!confirm('Are you sure? Any external apps using this key will immediately fail.')) return;
+    try {
+      await deleteGatewayKey(id);
+      toast.success('Gateway API Key revoked');
+      loadGatewayKeys();
+    } catch (err) {
+      toast.error('Failed to revoke key');
+    }
+  };
+  
+  const handleCopyKey = () => {
+    if (revealedKey) {
+      navigator.clipboard.writeText(revealedKey);
+      setCopied(true);
+      toast.success("Gateway API key copied to clipboard");
+      setTimeout(() => setCopied(false), 2000);
+    }
   };
 
   const strength = getStrength(newPass);
@@ -201,6 +263,42 @@ export default function SettingsPage() {
         {/* Right Column — Actions */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
+          {/* Gateway API Keys (Cloud Command Keys) */}
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="card" style={{ padding: 28 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <SectionHeader icon={Server} iconBg="var(--accent-indigo-glow)" title="Gateway API Keys" subtitle="Create tokens to securely route your external apps through Cloud Command" />
+              <button className="btn btn-primary btn-sm" onClick={() => setShowCreateKey(true)}>
+                <Plus size={14} /> New Key
+              </button>
+            </div>
+            
+            {loadingKeys ? (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: 20 }}><div className="spinner" /></div>
+            ) : gatewayKeys.length === 0 ? (
+              <div className="empty-state" style={{ padding: 20 }}>
+                <p>No Gateway API keys generated yet.</p>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {gatewayKeys.map(gk => (
+                  <div key={gk.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 12, background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 8 }}>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 600 }}>{gk.name}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: 4 }}>{gk.prefix}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                        Created: {new Date(gk.created_at).toLocaleDateString()}
+                        {gk.last_used_at && ` • Last used: ${new Date(gk.last_used_at).toLocaleDateString()}`}
+                      </div>
+                    </div>
+                    <button className="btn btn-ghost btn-icon" onClick={() => handleDeleteGatewayKey(gk.id)} title="Revoke Key">
+                      <Trash2 size={16} color="var(--accent-rose)" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </motion.div>
+
           {/* Notification Email */}
           <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }} className="card" style={{ padding: 28 }}>
             <SectionHeader icon={Bell} iconBg="var(--accent-purple-glow)" title="Notification Email" subtitle="Receive downtime alerts and API Vault OTPs" />
@@ -306,6 +404,74 @@ export default function SettingsPage() {
 
         </div>
       </div>
+      
+      {/* Create Gateway Key Modal */}
+      <AnimatePresence>
+        {showCreateKey && (
+          <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowCreateKey(false)}>
+            <motion.div className="modal-panel" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2 className="modal-title">Create Gateway API Key</h2>
+                <button className="btn btn-ghost btn-icon" onClick={() => setShowCreateKey(false)}><X size={18} /></button>
+              </div>
+              <form onSubmit={handleCreateGatewayKey} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div className="form-group">
+                  <label className="form-label">Key Name</label>
+                  <input required className="form-input" placeholder="e.g. News-Intel Backend" value={newKeyName} onChange={e => setNewKeyName(e.target.value)} />
+                  <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6 }}>Use this key in external applications to securely route requests through your Cloud Command vault.</p>
+                </div>
+                <button type="submit" className="btn btn-primary" disabled={creatingKey} style={{ marginTop: 8 }}>
+                  {creatingKey ? <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> : 'Generate Key'}
+                </button>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      
+      {/* Reveal Gateway Key Modal (One-Time) */}
+      <AnimatePresence>
+        {revealedKey && (
+          <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setRevealedKey(null)}>
+            <motion.div className="modal-panel" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Shield size={20} color="var(--accent-emerald)" /> Key Generated Successfully
+                </h2>
+                <button className="btn btn-ghost btn-icon" onClick={() => setRevealedKey(null)}><X size={18} /></button>
+              </div>
+              
+              <div style={{ textAlign: 'center', marginBottom: 24, padding: '16px', background: 'rgba(244,63,94,0.1)', border: '1px solid rgba(244,63,94,0.2)', borderRadius: 12 }}>
+                <AlertTriangle size={24} color="var(--accent-rose)" style={{ margin: '0 auto 12px' }} />
+                <p style={{ color: 'var(--accent-rose)', fontSize: 14, fontWeight: 600 }}>
+                  Please copy this key now.
+                </p>
+                <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>
+                  For security reasons, Cloud Command does not store this key in plain text. You will not be able to see it again after closing this window.
+                </p>
+              </div>
+
+              <div style={{ display: 'flex', gap: 8 }}>
+                <div style={{ 
+                  flex: 1, background: 'var(--bg-input)', padding: '16px 20px', borderRadius: 12, 
+                  fontFamily: 'var(--font-mono)', fontSize: 15, wordBreak: 'break-all', 
+                  border: '1px solid var(--accent-emerald)', color: 'var(--text-primary)',
+                  boxShadow: '0 0 20px rgba(16,185,129,0.15)'
+                }}>
+                  {revealedKey}
+                </div>
+                <button className="btn btn-primary btn-icon" style={{ width: 54, height: 54, flexShrink: 0 }} onClick={handleCopyKey} title="Copy Key">
+                  {copied ? <Check size={20} /> : <Copy size={20} />}
+                </button>
+              </div>
+              
+              <button className="btn btn-secondary" style={{ width: '100%', marginTop: 24 }} onClick={() => setRevealedKey(null)}>
+                I have copied the key
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

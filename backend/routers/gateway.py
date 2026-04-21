@@ -7,7 +7,6 @@ from datetime import datetime, timezone
 import models
 from dependencies import get_db
 from security import decrypt_value
-from config import settings
 
 router = APIRouter(prefix="/api/gateway", tags=["gateway"])
 
@@ -23,7 +22,11 @@ def log_api_usage(db: Session, api_key_id: int, tokens_used: int, status_code: i
     db.add(log)
     db.commit()
 
-async def verify_gateway_auth(request: Request):
+def _hash_key(key: str) -> str:
+    import hashlib
+    return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+async def verify_gateway_auth(request: Request, db: Session = Depends(get_db)) -> int:
     auth_header = request.headers.get("Authorization")
     custom_header = request.headers.get("X-Gateway-Secret")
     
@@ -33,15 +36,26 @@ async def verify_gateway_auth(request: Request):
     elif custom_header:
         secret = custom_header
         
-    if secret != settings.GATEWAY_SECRET:
-        raise HTTPException(status_code=401, detail="Unauthorized Gateway Access")
+    if not secret:
+        raise HTTPException(status_code=401, detail="Missing Gateway Authentication")
+        
+    key_hash = _hash_key(secret)
+    gateway_key = db.query(models.GatewayApiKey).filter(models.GatewayApiKey.key_hash == key_hash).first()
+    
+    if not gateway_key:
+        raise HTTPException(status_code=401, detail="Invalid Gateway API Key")
+        
+    gateway_key.last_used_at = datetime.now(timezone.utc)
+    db.commit()
+    
+    return gateway_key.user_id
 
-def _pick_from_group(db: Session, provider: str, category: str = None) -> models.ApiKey:
+def _pick_from_group(db: Session, user_id: int, provider: str, category: str = None) -> models.ApiKey:
     """Try to find and pick a key using key groups with strategy-based selection."""
     import random as rng
     
     # Find groups that have matching keys
-    groups = db.query(models.ApiKeyGroup).all()
+    groups = db.query(models.ApiKeyGroup).filter(models.ApiKeyGroup.user_id == user_id).all()
     for group in groups:
         enabled_members = [
             m for m in group.members 
@@ -78,14 +92,15 @@ def _pick_from_group(db: Session, provider: str, category: str = None) -> models
     
     return None
 
-def get_active_key(db: Session, provider: str, category: str = None) -> models.ApiKey:
+def get_active_key(db: Session, user_id: int, provider: str, category: str = None) -> models.ApiKey:
     # First try group-based selection
-    key = _pick_from_group(db, provider, category)
+    key = _pick_from_group(db, user_id, provider, category)
     if key:
         return key
     
     # Fallback to direct key selection
     query = db.query(models.ApiKey).filter(
+        models.ApiKey.user_id == user_id,
         models.ApiKey.provider == provider,
         models.ApiKey.status.ilike("%active%")
     )
@@ -98,6 +113,7 @@ def get_active_key(db: Session, provider: str, category: str = None) -> models.A
     if not key and category:
         # Fallback to any active key for this provider
         keys = db.query(models.ApiKey).filter(
+            models.ApiKey.user_id == user_id,
             models.ApiKey.provider == provider,
             models.ApiKey.status.ilike("%active%")
         ).all()
@@ -110,13 +126,13 @@ async def proxy_gateway(
     path: str,
     request: Request,
     background_tasks: BackgroundTasks,
+    user_id: int = Depends(verify_gateway_auth),
     db: Session = Depends(get_db)
 ):
-    await verify_gateway_auth(request)
     provider = provider.lower()
     
     category = request.headers.get("X-Project-Category")
-    api_key = get_active_key(db, provider, category)
+    api_key = get_active_key(db, user_id, provider, category)
     if not api_key:
         raise HTTPException(status_code=404, detail=f"No active API key found for provider: {provider}")
 

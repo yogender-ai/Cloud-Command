@@ -99,14 +99,34 @@ class ApiKeyUsageResponse(BaseModel):
     class Config:
         from_attributes = True
 
-class ApiKeySummary(BaseModel):
+class ApiUsageResponse(BaseModel):
     total_keys: int
     active_keys: int
     tokens_today: int
+    requests_today: int
+    errors_today: int
     usage_history: List[dict]
+    per_key: List[dict]
+    key_groups: List["ApiKeyGroupResponse"]
 
-class ApiKeyRevealResponse(BaseModel):
-    key_value: str
+# ──────────────────────────────────────
+# GATEWAY API KEYS (Cloud Command Keys)
+# ──────────────────────────────────────
+class GatewayApiKeyCreate(BaseModel):
+    name: str
+
+class GatewayApiKeyResponse(BaseModel):
+    id: int
+    name: str
+    prefix: str
+    last_used_at: Optional[datetime] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class GatewayApiKeyRevealResponse(GatewayApiKeyResponse):
+    key_value: str  # The plaintext token (only returned once upon creation)
 
 
 # ──────────────────────────────────────

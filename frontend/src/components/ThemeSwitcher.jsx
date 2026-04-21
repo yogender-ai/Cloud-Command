@@ -13,11 +13,6 @@ export default function ThemeSwitcher() {
         className="theme-switcher-btn"
         onClick={() => setOpen(true)}
         title="Change Theme"
-        style={{
-          boxShadow: `0 0 15px ${themes[themeName]?.accentGlow || 'transparent'}`,
-          borderColor: themes[themeName]?.accent || 'var(--border)',
-          color: themes[themeName]?.accent || 'var(--text-primary)'
-        }}
       >
         <Palette size={18} />
       </button>

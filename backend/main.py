@@ -8,9 +8,12 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from datetime import date
+from sqlalchemy import inspect
 
 from database import engine, SessionLocal
 from models import Base, PlatformVisit
+import models
+from routers import auth, monitors, logs, apikeys, platform_accounts, analytics, gateway, keygroups, gateway_keys
 from config import settings
 from limiter import limiter
 from slowapi import _rate_limit_exceeded_handler
@@ -73,6 +76,15 @@ def _safe_migrate():
                 # PostgreSQL raises if column already exists (shouldn't with IF NOT EXISTS),
                 # or if running SQLite which uses different syntax — just skip.
                 print(f"⚠️  Migration skipped ({e.__class__.__name__}): {sql[:60]}")
+        
+        # --- Add GatewayApiKey ---
+        try:
+            inspector = inspect(engine)
+            if not inspector.has_table("gateway_api_keys"):
+                print("Adding gateway_api_keys table...")
+                models.GatewayApiKey.__table__.create(engine)
+        except Exception as e:
+            print(f"Migration error for gateway_api_keys: {e}")
     print("Safe migrations applied")
 
 
@@ -118,6 +130,8 @@ from routers.vercel import router as vercel_router
 from routers.settings import router as settings_router
 from routers.tracking import router as tracking_router
 from routers.gateway import router as gateway_router
+from routers.gateway_keys import router as gateway_keys_router
+from routers.analytics import router as analytics_router
 
 app.include_router(auth_router)
 app.include_router(monitors_router)
@@ -128,6 +142,8 @@ app.include_router(vercel_router)
 app.include_router(settings_router)
 app.include_router(tracking_router)
 app.include_router(gateway_router)
+app.include_router(gateway_keys_router)
+app.include_router(analytics_router)
 
 
 # ── Utility Endpoints ──

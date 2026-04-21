@@ -28,7 +28,25 @@ class User(Base):
     monitors = relationship("Monitor", back_populates="owner", cascade="all, delete-orphan")
     api_keys = relationship("ApiKey", back_populates="owner", cascade="all, delete-orphan")
     api_key_groups = relationship("ApiKeyGroup", back_populates="owner", cascade="all, delete-orphan")
+    gateway_keys = relationship("GatewayApiKey", back_populates="owner", cascade="all, delete-orphan")
     platform_accounts = relationship("PlatformAccount", back_populates="owner", cascade="all, delete-orphan")
+
+
+# ──────────────────────────────────────
+# CLOUD COMMAND GATEWAY KEYS
+# ──────────────────────────────────────
+class GatewayApiKey(Base):
+    __tablename__ = "gateway_api_keys"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(255), nullable=False)  # e.g., "News-Intel Production"
+    key_hash = Column(String(255), unique=True, index=True, nullable=False)  # SHA-256 hash of the token
+    prefix = Column(String(20), nullable=False)  # e.g., "cc-sk-..." for UI display
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    owner = relationship("User", back_populates="gateway_keys")
 
 
 # ──────────────────────────────────────
