@@ -35,9 +35,14 @@ def create_gateway_key(key_in: schemas.GatewayApiKeyCreate, db: Session = Depend
     db.refresh(new_key)
     
     # Return the plaintext key exactly once
-    response = schemas.GatewayApiKeyRevealResponse.model_validate(new_key)
-    response.key_value = raw_token
-    return response
+    return schemas.GatewayApiKeyRevealResponse(
+        id=new_key.id,
+        name=new_key.name,
+        prefix=new_key.prefix,
+        last_used_at=new_key.last_used_at,
+        created_at=new_key.created_at,
+        key_value=raw_token
+    )
 
 @router.delete("/{key_id}")
 def delete_gateway_key(key_id: int, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
