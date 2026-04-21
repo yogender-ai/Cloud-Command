@@ -11,9 +11,10 @@ from config import settings
 
 router = APIRouter(prefix="/api/gateway", tags=["gateway"])
 
-def log_api_usage(db: Session, api_key_id: int, tokens_used: int, status_code: int = 200, is_error: bool = False):
+def log_api_usage(db: Session, api_key_id: int, tokens_used: int, status_code: int = 200, is_error: bool = False, api_key_name: str = None):
     log = models.ApiUsageLog(
         api_key_id=api_key_id, 
+        api_key_name=api_key_name,
         tokens_used=tokens_used, 
         status_code=status_code,
         is_error=is_error,
@@ -35,7 +36,55 @@ async def verify_gateway_auth(request: Request):
     if secret != settings.GATEWAY_SECRET:
         raise HTTPException(status_code=401, detail="Unauthorized Gateway Access")
 
+def _pick_from_group(db: Session, provider: str, category: str = None) -> models.ApiKey:
+    """Try to find and pick a key using key groups with strategy-based selection."""
+    import random as rng
+    
+    # Find groups that have matching keys
+    groups = db.query(models.ApiKeyGroup).all()
+    for group in groups:
+        enabled_members = [
+            m for m in group.members 
+            if m.is_enabled 
+            and m.api_key 
+            and m.api_key.provider == provider
+            and "active" in m.api_key.status.lower()
+        ]
+        if category:
+            cat_members = [m for m in enabled_members if m.api_key.category == category]
+            if cat_members:
+                enabled_members = cat_members
+        
+        if not enabled_members:
+            continue
+            
+        if group.strategy == "fallback":
+            # Pick highest priority (lowest number)
+            sorted_members = sorted(enabled_members, key=lambda m: m.priority)
+            return sorted_members[0].api_key
+        elif group.strategy == "round-robin":
+            # Round-robin based on total usage count (least used first)
+            from sqlalchemy import func
+            member_usage = []
+            for m in enabled_members:
+                count = db.query(func.count(models.ApiUsageLog.id)).filter(
+                    models.ApiUsageLog.api_key_id == m.api_key_id
+                ).scalar() or 0
+                member_usage.append((m, count))
+            member_usage.sort(key=lambda x: x[1])
+            return member_usage[0][0].api_key
+        else:  # random
+            return rng.choice(enabled_members).api_key
+    
+    return None
+
 def get_active_key(db: Session, provider: str, category: str = None) -> models.ApiKey:
+    # First try group-based selection
+    key = _pick_from_group(db, provider, category)
+    if key:
+        return key
+    
+    # Fallback to direct key selection
     query = db.query(models.ApiKey).filter(
         models.ApiKey.provider == provider,
         models.ApiKey.status.ilike("%active%")
@@ -151,7 +200,7 @@ async def proxy_gateway(
         except Exception:
             pass
             
-        background_tasks.add_task(log_api_usage, db, api_key.id, tracked_tokens, resp.status_code, resp.status_code >= 400)
+        background_tasks.add_task(log_api_usage, db, api_key.id, tracked_tokens, resp.status_code, resp.status_code >= 400, api_key_name=api_key.name)
             
         filtered_headers = {k: v for k, v in resp.headers.items() if k.lower() not in ("content-length", "content-encoding")}
         return Response(content=resp_bytes, status_code=resp.status_code, headers=filtered_headers)
@@ -182,7 +231,7 @@ async def proxy_gateway(
             from database import SessionLocal as DBSession
             db_session = DBSession()
             try:
-                log_api_usage(db_session, api_key.id, tracked_tokens, resp.status_code, resp.status_code >= 400)
+                log_api_usage(db_session, api_key.id, tracked_tokens, resp.status_code, resp.status_code >= 400, api_key_name=api_key.name)
             finally:
                 db_session.close()
 

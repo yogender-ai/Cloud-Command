@@ -92,6 +92,7 @@ class ApiKeyResponse(BaseModel):
 class ApiKeyUsageResponse(BaseModel):
     id: int
     api_key_id: int
+    api_key_name: Optional[str] = None
     tokens_used: int
     timestamp: datetime
 
@@ -103,6 +104,53 @@ class ApiKeySummary(BaseModel):
     active_keys: int
     tokens_today: int
     usage_history: List[dict]
+
+class ApiKeyRevealResponse(BaseModel):
+    key_value: str
+
+
+# ──────────────────────────────────────
+# API KEY GROUPS
+# ──────────────────────────────────────
+class ApiKeyGroupMemberCreate(BaseModel):
+    api_key_id: int
+    priority: int = 0
+    is_enabled: bool = True
+
+class ApiKeyGroupMemberResponse(BaseModel):
+    id: int
+    api_key_id: int
+    key_name: Optional[str] = None
+    provider: Optional[str] = None
+    masked_key: Optional[str] = None
+    status: Optional[str] = None
+    priority: int
+    is_enabled: bool
+
+    class Config:
+        from_attributes = True
+
+class ApiKeyGroupCreate(BaseModel):
+    name: str
+    description: Optional[str] = None
+    strategy: str = "round-robin"  # round-robin, fallback, random
+    member_ids: Optional[List[int]] = None  # API key IDs to add initially
+
+class ApiKeyGroupUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    strategy: Optional[str] = None
+
+class ApiKeyGroupResponse(BaseModel):
+    id: int
+    name: str
+    description: Optional[str] = None
+    strategy: str
+    members: List[ApiKeyGroupMemberResponse] = []
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
 
 
 # ──────────────────────────────────────

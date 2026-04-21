@@ -56,8 +56,18 @@ export const updateApiKey = (id, data) => api.patch(`/apikeys/${id}`, data).then
 export const checkApiKey = (id) => api.post(`/apikeys/${id}/check`).then(r => r.data);
 export const getApiKeySummary = (range = '7d') => api.get('/apikeys/summary', { params: { range } }).then(r => r.data);
 export const getApiKeyUsage = (id) => api.get(`/apikeys/${id}/usage`).then(r => r.data);
+export const revealApiKey = (id) => api.post(`/apikeys/${id}/reveal`).then(r => r.data);
 export const requestVaultOtp = () => api.post('/apikeys/request-view-otp').then(r => r.data);
 export const verifyVaultOtp = (code) => api.post('/apikeys/verify-view-otp', { code }).then(r => r.data);
+
+// ── Key Groups ──
+export const getKeyGroups = () => api.get('/keygroups').then(r => r.data);
+export const createKeyGroup = (data) => api.post('/keygroups', data).then(r => r.data);
+export const updateKeyGroup = (id, data) => api.patch(`/keygroups/${id}`, data).then(r => r.data);
+export const deleteKeyGroup = (id) => api.delete(`/keygroups/${id}`);
+export const addGroupMember = (groupId, data) => api.post(`/keygroups/${groupId}/members`, data).then(r => r.data);
+export const removeGroupMember = (groupId, memberId) => api.delete(`/keygroups/${groupId}/members/${memberId}`);
+export const updateGroupMember = (groupId, memberId, data) => api.patch(`/keygroups/${groupId}/members/${memberId}`, data).then(r => r.data);
 
 // ── Render ──
 export const getRenderAccounts = () => api.get('/render/accounts').then(r => r.data);

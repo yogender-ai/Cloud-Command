@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, case
 from typing import List
 from datetime import datetime, timedelta, timezone
 import random
@@ -259,6 +259,25 @@ async def recheck_key(
     return key
 
 
+@router.post("/{key_id}/reveal", response_model=schemas.ApiKeyRevealResponse)
+def reveal_key(
+    key_id: int,
+    db: Session = Depends(get_db),
+    user: models.User = Depends(get_current_user),
+):
+    """Reveal the full decrypted API key. Vault must be unlocked (OTP verified)."""
+    key = (
+        db.query(models.ApiKey)
+        .filter(models.ApiKey.id == key_id, models.ApiKey.user_id == user.id)
+        .first()
+    )
+    if not key:
+        raise HTTPException(status_code=404, detail="API key not found")
+
+    plaintext = decrypt_value(key.encrypted_key)
+    return {"key_value": plaintext}
+
+
 @router.get("/summary")
 def get_summary(
     time_range: str = Query("7d", alias="range"),
@@ -381,7 +400,9 @@ def get_summary(
 
     # Per-key breakdown
     per_key = []
+    key_name_map = {}  # id -> name for chart labeling
     for k in keys:
+        key_name_map[k.id] = k.name
         k_tokens = (
             db.query(func.sum(models.ApiUsageLog.tokens_used))
             .filter(models.ApiUsageLog.api_key_id == k.id)
@@ -399,9 +420,44 @@ def get_summary(
             "name": k.name,
             "provider": k.provider,
             "category": k.category,
+            "masked_key": k.masked_key,
             "total_tokens": k_tokens,
             "total_requests": k_requests,
             "failed_requests": k_errors,
+        })
+
+    # Enrich history with per-key breakdown for charts
+    for entry in history:
+        per_key_usage = {}
+        for k in keys:
+            per_key_usage[k.name] = 0
+        entry["per_key_tokens"] = per_key_usage
+
+    # Get key groups
+    groups = db.query(models.ApiKeyGroup).filter(
+        models.ApiKeyGroup.user_id == user.id
+    ).all()
+    groups_data = []
+    for g in groups:
+        members_data = []
+        for m in sorted(g.members, key=lambda x: x.priority):
+            members_data.append({
+                "id": m.id,
+                "api_key_id": m.api_key_id,
+                "key_name": m.api_key.name if m.api_key else None,
+                "provider": m.api_key.provider if m.api_key else None,
+                "masked_key": m.api_key.masked_key if m.api_key else None,
+                "status": m.api_key.status if m.api_key else None,
+                "priority": m.priority,
+                "is_enabled": m.is_enabled,
+            })
+        groups_data.append({
+            "id": g.id,
+            "name": g.name,
+            "description": g.description,
+            "strategy": g.strategy,
+            "members": members_data,
+            "created_at": g.created_at.isoformat() if g.created_at else None,
         })
 
     return {
@@ -412,6 +468,7 @@ def get_summary(
         "errors_today": errors_today,
         "usage_history": history,
         "per_key": per_key,
+        "key_groups": groups_data,
     }
 
 

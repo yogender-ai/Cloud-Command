@@ -61,6 +61,8 @@ def _safe_migrate():
         "ALTER TABLE platform_accounts ADD COLUMN IF NOT EXISTS category VARCHAR(100)",
         "ALTER TABLE api_usage_logs    ADD COLUMN IF NOT EXISTS status_code INTEGER DEFAULT 200",
         "ALTER TABLE api_usage_logs    ADD COLUMN IF NOT EXISTS is_error BOOLEAN DEFAULT FALSE",
+        # v2.2.0: per-key analytics tracking
+        "ALTER TABLE api_usage_logs    ADD COLUMN IF NOT EXISTS api_key_name VARCHAR(255)",
     ]
     with engine.connect() as conn:
         for sql in migrations:
@@ -110,6 +112,7 @@ async def add_security_headers(request: Request, call_next):
 from routers.auth import router as auth_router
 from routers.monitors import router as monitors_router
 from routers.apikeys import router as apikeys_router
+from routers.keygroups import router as keygroups_router
 from routers.render import router as render_router
 from routers.vercel import router as vercel_router
 from routers.settings import router as settings_router
@@ -119,6 +122,7 @@ from routers.gateway import router as gateway_router
 app.include_router(auth_router)
 app.include_router(monitors_router)
 app.include_router(apikeys_router)
+app.include_router(keygroups_router)
 app.include_router(render_router)
 app.include_router(vercel_router)
 app.include_router(settings_router)

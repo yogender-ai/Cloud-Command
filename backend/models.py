@@ -27,6 +27,7 @@ class User(Base):
     # Relationships
     monitors = relationship("Monitor", back_populates="owner", cascade="all, delete-orphan")
     api_keys = relationship("ApiKey", back_populates="owner", cascade="all, delete-orphan")
+    api_key_groups = relationship("ApiKeyGroup", back_populates="owner", cascade="all, delete-orphan")
     platform_accounts = relationship("PlatformAccount", back_populates="owner", cascade="all, delete-orphan")
 
 
@@ -102,6 +103,7 @@ class ApiUsageLog(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     api_key_id = Column(Integer, ForeignKey("api_keys.id", ondelete="CASCADE"), nullable=False)
+    api_key_name = Column(String(255), nullable=True)  # Denormalized for per-key chart display
     tokens_used = Column(Integer, default=0)
     status_code = Column(Integer, default=200)
     is_error = Column(Boolean, default=False)
@@ -151,3 +153,33 @@ class MonitorVisit(Base):
     __table_args__ = (
         UniqueConstraint("monitor_id", "date", "hour", name="uq_monitor_date_hour"),
     )
+
+
+# ──────────────────────────────────────
+# API KEY GROUPS (bundled key management)
+# ──────────────────────────────────────
+class ApiKeyGroup(Base):
+    __tablename__ = "api_key_groups"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(255), nullable=False)  # e.g. "News-Intel Keys"
+    description = Column(Text, nullable=True)
+    strategy = Column(String(50), default="round-robin")  # round-robin, fallback, random
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    owner = relationship("User", back_populates="api_key_groups")
+    members = relationship("ApiKeyGroupMember", back_populates="group", cascade="all, delete-orphan")
+
+
+class ApiKeyGroupMember(Base):
+    __tablename__ = "api_key_group_members"
+
+    id = Column(Integer, primary_key=True, index=True)
+    group_id = Column(Integer, ForeignKey("api_key_groups.id", ondelete="CASCADE"), nullable=False)
+    api_key_id = Column(Integer, ForeignKey("api_keys.id", ondelete="CASCADE"), nullable=False)
+    priority = Column(Integer, default=0)  # Lower = higher priority (for fallback mode)
+    is_enabled = Column(Boolean, default=True)
+
+    group = relationship("ApiKeyGroup", back_populates="members")
+    api_key = relationship("ApiKey")

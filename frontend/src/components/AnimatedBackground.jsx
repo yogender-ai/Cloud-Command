@@ -25,17 +25,19 @@ export default function AnimatedBackground() {
 
     function createParticles() {
       particles = [];
-      const count = Math.min(Math.floor((window.innerWidth * window.innerHeight) / 18000), 80);
+      const count = Math.min(Math.floor((window.innerWidth * window.innerHeight) / 15000), 120);
       for (let i = 0; i < count; i++) {
+        const isLarge = Math.random() > 0.85;
         particles.push({
           x: Math.random() * window.innerWidth,
           y: Math.random() * window.innerHeight,
-          vx: (Math.random() - 0.5) * 0.3,
-          vy: (Math.random() - 0.5) * 0.3,
-          radius: Math.random() * 1.5 + 0.5,
-          opacity: Math.random() * 0.5 + 0.1,
+          vx: (Math.random() - 0.5) * (isLarge ? 0.1 : 0.3),
+          vy: (Math.random() - 0.5) * (isLarge ? 0.1 : 0.3),
+          radius: isLarge ? (Math.random() * 40 + 20) : (Math.random() * 1.5 + 0.5),
+          opacity: isLarge ? (Math.random() * 0.03 + 0.01) : (Math.random() * 0.5 + 0.1),
           pulseSpeed: Math.random() * 0.02 + 0.005,
           pulsePhase: Math.random() * Math.PI * 2,
+          isLarge: isLarge
         });
       }
     }
@@ -47,7 +49,9 @@ export default function AnimatedBackground() {
 
     function drawConnections() {
       for (let i = 0; i < particles.length; i++) {
+        if (particles[i].isLarge) continue; // Don't connect large background orbs
         for (let j = i + 1; j < particles.length; j++) {
+          if (particles[j].isLarge) continue;
           const dx = particles[i].x - particles[j].x;
           const dy = particles[i].y - particles[j].y;
           const dist = Math.sqrt(dx * dx + dy * dy);

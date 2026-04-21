@@ -4,17 +4,22 @@ import {
   Plus, KeyRound, CheckCircle2, XCircle, AlertCircle, RefreshCw,
   Trash2, Shield, Zap, X, BarChart3, Lock, Mail, ShieldOff, Filter,
   ChevronRight, Calculator, Check, Copy, Activity, TrendingUp,
-  Clock, Server, Flame, Hash
+  Clock, Server, Flame, Hash, Eye, Layers, Settings, ChevronDown
 } from 'lucide-react';
 import {
   AreaChart, Area, ResponsiveContainer, XAxis, YAxis, Tooltip,
   CartesianGrid, ComposedChart, Bar, Line, BarChart, PieChart, Pie, Cell
 } from 'recharts';
 import { toast } from 'sonner';
-import { getApiKeys, addApiKey, deleteApiKey, updateApiKey, checkApiKey, getApiKeySummary, getProfile, requestVaultOtp, verifyVaultOtp } from '../api';
+import { 
+  getApiKeys, addApiKey, deleteApiKey, updateApiKey, checkApiKey, 
+  getApiKeySummary, getProfile, requestVaultOtp, verifyVaultOtp,
+  getKeyGroups, createKeyGroup, updateKeyGroup, deleteKeyGroup,
+  addGroupMember, removeGroupMember, updateGroupMember, revealApiKey
+} from '../api';
 import { CategoryEditor } from '../components/CategoryEditor';
 
-const PROVIDERS = ['OpenAI', 'Anthropic', 'Gemini', 'DeepSeek', 'HuggingFace', 'Groq', 'Mistral', 'xAI', 'Cohere', 'Other'];
+const PROVIDERS = ['OpenAI', 'Anthropic', 'Gemini', 'DeepSeek', 'HuggingFace', 'Groq', 'Mistral', 'xAI', 'Cohere', 'OpenRouter', 'Other'];
 const VAULT_LOCK_MS = 15 * 60 * 1000;
 const POLL_INTERVAL = 8000; // 8 second live refresh
 const TIME_RANGES = [
@@ -26,9 +31,10 @@ const TIME_RANGES = [
   { key: 'all', label: 'All Time' },
 ];
 const KEY_COLORS = ['#a855f7', '#6366f1', '#10b981', '#f59e0b', '#f43f5e', '#0ea5e9', '#ec4899', '#8b5cf6', '#14b8a6', '#ef4444'];
+const STRATEGIES = ['round-robin', 'fallback', 'random'];
 
 function StatusBadge({ status }) {
-  const s = status.toLowerCase();
+  const s = (status || '').toLowerCase();
   if (s.includes('active')) return <span className="badge badge-active badge-live"><CheckCircle2 size={10} /> Active</span>;
   if (s.includes('invalid')) return <span className="badge badge-invalid"><XCircle size={10} /> Invalid</span>;
   if (s.includes('suspend') || s.includes('rate') || s.includes('balance'))
@@ -93,16 +99,19 @@ function CustomTooltip({ active, payload, label }) {
       background: 'rgba(15,15,25,0.95)', backdropFilter: 'blur(12px)',
       border: '1px solid rgba(99,102,241,0.25)', borderRadius: 10,
       padding: '10px 14px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
-      minWidth: 140,
+      minWidth: 140, zIndex: 1000
     }}>
       <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginBottom: 6, fontWeight: 600, letterSpacing: '0.04em' }}>{label}</div>
-      {payload.map((p, i) => (
-        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginBottom: 3 }}>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', background: p.color, flexShrink: 0 }} />
-          <span style={{ color: 'rgba(255,255,255,0.7)' }}>{p.name}:</span>
-          <span style={{ fontWeight: 700, color: '#fff', marginLeft: 'auto', fontFamily: 'var(--font-mono)' }}>{typeof p.value === 'number' ? p.value.toLocaleString() : p.value}{p.name?.includes('%') ? '%' : ''}</span>
-        </div>
-      ))}
+      {payload.map((p, i) => {
+        if (p.value === 0) return null; // hide zero values in stacked chart
+        return (
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, marginBottom: 3 }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: p.color, flexShrink: 0 }} />
+            <span style={{ color: 'rgba(255,255,255,0.7)' }}>{p.name}:</span>
+            <span style={{ fontWeight: 700, color: '#fff', marginLeft: 'auto', fontFamily: 'var(--font-mono)' }}>{typeof p.value === 'number' ? p.value.toLocaleString() : p.value}{p.name?.includes('%') ? '%' : ''}</span>
+          </div>
+        )
+      })}
     </div>
   );
 }
@@ -155,14 +164,105 @@ function DetailModal({ apiKey, onClose }) {
   );
 }
 
+// ── One-Time Key Reveal Modal ──
+function RevealModal({ revealKey, onClose, vaultUnlocked }) {
+  const [keyString, setKeyString] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (!vaultUnlocked) {
+      setError("Vault is locked. Cannot decrypt key.");
+      setLoading(false);
+      return;
+    }
+    revealApiKey(revealKey.id)
+      .then(res => {
+        setKeyString(res.key_value);
+        setLoading(false);
+      })
+      .catch(err => {
+        setError(err.response?.data?.detail || "Failed to decrypt key");
+        setLoading(false);
+      });
+  }, [revealKey, vaultUnlocked]);
+
+  const handleCopy = () => {
+    if (keyString) {
+      navigator.clipboard.writeText(keyString);
+      setCopied(true);
+      toast.success("API key copied to clipboard");
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
+      <motion.div className="modal-panel" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-header">
+          <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <Eye size={20} color="var(--accent-amber)" /> Reveal API Key
+          </h2>
+          <button className="btn btn-ghost btn-icon" onClick={onClose}><X size={18} /></button>
+        </div>
+        
+        <div style={{ textAlign: 'center', marginBottom: 24 }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>
+            For security reasons, this key is only shown once and will auto-hide. Do not share it with anyone.
+          </p>
+          {!loading && !error && (
+            <p style={{ color: 'var(--accent-amber)', fontSize: 13, marginTop: 8, fontWeight: 600 }}>
+              Auto-hiding in <Countdown seconds={30} onExpire={onClose} />
+            </p>
+          )}
+        </div>
+
+        {loading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}><div className="spinner" /></div>
+        ) : error ? (
+          <div style={{ background: 'var(--accent-rose-glow)', color: 'var(--accent-rose)', padding: 16, borderRadius: 12, textAlign: 'center', border: '1px solid rgba(244,63,94,0.2)' }}>
+            <ShieldOff size={24} style={{ margin: '0 auto 8px' }} />
+            {error}
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ 
+              flex: 1, background: 'var(--bg-input)', padding: '16px 20px', borderRadius: 12, 
+              fontFamily: 'var(--font-mono)', fontSize: 15, wordBreak: 'break-all', 
+              border: '1px solid var(--border)', color: 'var(--text-primary)'
+            }}>
+              {keyString}
+            </div>
+            <button className="btn btn-primary btn-icon" style={{ width: 54, height: 54, flexShrink: 0 }} onClick={handleCopy} title="Copy Key">
+              {copied ? <Check size={20} /> : <Copy size={20} />}
+            </button>
+          </div>
+        )}
+      </motion.div>
+    </motion.div>
+  );
+}
+
 export default function ApiVault() {
   const [keys, setKeys] = useState([]);
   const [summary, setSummary] = useState(null);
+  const [groups, setGroups] = useState([]);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  
+  // Modals
   const [showAdd, setShowAdd] = useState(false);
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [manageGroup, setManageGroup] = useState(null);
+  const [revealKey, setRevealKey] = useState(null);
+  
+  // Forms
   const [form, setForm] = useState({ name: '', provider: 'OpenAI', category: '', key_value: '' });
+  const [groupForm, setGroupForm] = useState({ name: '', description: '', strategy: 'round-robin', member_ids: [] });
   const [adding, setAdding] = useState(false);
+  
+  // UI State
   const [filterCat, setFilterCat] = useState('All');
   const [selectedKey, setSelectedKey] = useState(null);
   const [timeRange, setTimeRange] = useState('7d');
@@ -196,6 +296,7 @@ export default function ApiVault() {
     try {
       const s = await getApiKeySummary(timeRange);
       setSummary(s);
+      if (s.key_groups) setGroups(s.key_groups);
     } catch {}
   }, [timeRange]);
 
@@ -203,10 +304,10 @@ export default function ApiVault() {
     try {
       const [k, s] = await Promise.all([getApiKeys(), getApiKeySummary(timeRange)]);
       setKeys(k); setSummary(s);
+      if (s.key_groups) setGroups(s.key_groups);
     } catch {} finally { setLoading(false); }
   };
 
-  // Reload summary when time range changes
   useEffect(() => {
     loadSummaryOnly();
   }, [timeRange, loadSummaryOnly]);
@@ -247,8 +348,14 @@ export default function ApiVault() {
       
       if (requireOtpFor === 'add') {
         setShowAdd(true);
+      } else if (requireOtpFor === 'create_group') {
+        setShowCreateGroup(true);
       } else if (requireOtpFor?.type === 'delete') {
         executeDelete(requireOtpFor.id);
+      } else if (requireOtpFor?.type === 'reveal') {
+        setRevealKey(requireOtpFor.key);
+      } else if (requireOtpFor?.type === 'manage_group') {
+        setManageGroup(requireOtpFor.group);
       }
       setRequireOtpFor(null);
     } catch (err) {
@@ -256,14 +363,16 @@ export default function ApiVault() {
     } finally { setVerifying(false); }
   };
 
-  const attemptAdd = () => {
-    if (vaultUnlocked) setShowAdd(true);
-    else handleSendOtp('add');
-  };
-
-  const attemptDelete = (id) => {
-    if (vaultUnlocked) executeDelete(id);
-    else handleSendOtp({ type: 'delete', id });
+  const attemptAction = (action) => {
+    if (vaultUnlocked) {
+      if (action === 'add') setShowAdd(true);
+      else if (action === 'create_group') setShowCreateGroup(true);
+      else if (action.type === 'delete') executeDelete(action.id);
+      else if (action.type === 'reveal') setRevealKey(action.key);
+      else if (action.type === 'manage_group') setManageGroup(action.group);
+    } else {
+      handleSendOtp(action);
+    }
   };
 
   const handleAdd = async (e) => {
@@ -280,11 +389,36 @@ export default function ApiVault() {
     } finally { setAdding(false); }
   };
 
+  const handleCreateGroup = async (e) => {
+    e.preventDefault();
+    setAdding(true);
+    try {
+      await createKeyGroup(groupForm);
+      setShowCreateGroup(false);
+      setGroupForm({ name: '', description: '', strategy: 'round-robin', member_ids: [] });
+      loadVaultData();
+      toast.success('Key group created');
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to create group');
+    } finally { setAdding(false); }
+  };
+
   const executeDelete = async (id) => {
     if (!confirm('Delete this API key?')) return;
     await deleteApiKey(id); 
     loadVaultData(); 
     toast.success('Key deleted');
+  };
+  
+  const executeDeleteGroup = async (id) => {
+    if (!confirm('Delete this group? The underlying API keys will NOT be deleted.')) return;
+    try {
+      await deleteKeyGroup(id);
+      loadVaultData();
+      toast.success('Group deleted');
+    } catch (err) {
+      toast.error('Failed to delete group');
+    }
   };
 
   const handleCheck = async (e, id) => {
@@ -305,6 +439,32 @@ export default function ApiVault() {
       toast.success(cat ? `Tagged as "${cat}"` : 'Category cleared');
     } catch { toast.error('Failed to update category'); }
   };
+  
+  const handleAddMemberToGroup = async (groupId, keyId) => {
+    try {
+      await addGroupMember(groupId, { api_key_id: parseInt(keyId) });
+      loadVaultData();
+      toast.success('Key added to group');
+      if (manageGroup && manageGroup.id === groupId) {
+        setManageGroup({...manageGroup, members: [...manageGroup.members, { api_key_id: parseInt(keyId) }]});
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to add member');
+    }
+  };
+  
+  const handleRemoveMember = async (groupId, memberId) => {
+    try {
+      await removeGroupMember(groupId, memberId);
+      loadVaultData();
+      toast.success('Key removed from group');
+      if (manageGroup && manageGroup.id === groupId) {
+        setManageGroup({...manageGroup, members: manageGroup.members.filter(m => m.id !== memberId)});
+      }
+    } catch (err) {
+      toast.error('Failed to remove member');
+    }
+  };
 
   const allCategories = [...new Set(keys.map(k => k.category).filter(Boolean))];
   const categories = ['All', ...allCategories];
@@ -312,11 +472,16 @@ export default function ApiVault() {
 
   if (loading) return <div className="page-container"><div className="loading-screen"><div className="spinner" /><p>Loading API keys...</p></div></div>;
 
-  const processedHistory = (summary?.usage_history || []).map(d => ({
-    ...d,
-    success_requests: (d.total_requests || 0) - (d.failed_requests || 0),
-    success_rate: d.total_requests > 0 ? Math.round(((d.total_requests - d.failed_requests) / d.total_requests) * 100) : 100,
-  }));
+  const processedHistory = (summary?.usage_history || []).map(d => {
+    // Flatten per_key_tokens into the root object so Recharts can stack them easily
+    const flattenedKeys = d.per_key_tokens || {};
+    return {
+      ...d,
+      ...flattenedKeys,
+      success_requests: (d.total_requests || 0) - (d.failed_requests || 0),
+      success_rate: d.total_requests > 0 ? Math.round(((d.total_requests - d.failed_requests) / d.total_requests) * 100) : 100,
+    };
+  });
 
   const perKey = summary?.per_key || [];
 
@@ -334,7 +499,10 @@ export default function ApiVault() {
         </div>
         <div className="header-actions">
           {keys.length > 0 && <button className="btn btn-secondary" onClick={handleCheckAll}><RefreshCw size={14} /> Refresh All</button>}
-          <button className="btn btn-primary" onClick={attemptAdd} disabled={sending}>
+          <button className="btn btn-secondary" onClick={() => attemptAction('create_group')} disabled={sending}>
+            <Layers size={16} /> New Group
+          </button>
+          <button className="btn btn-primary" onClick={() => attemptAction('add')} disabled={sending}>
             {sending && requireOtpFor === 'add' ? <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2, marginRight: 8 }}/>: <Plus size={16} />}
             Add Key
           </button>
@@ -364,6 +532,53 @@ export default function ApiVault() {
         </div>
       )}
 
+      {/* ── API Key Groups Section ── */}
+      {groups.length > 0 && (
+        <div style={{ marginBottom: 32 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Layers size={18} color="var(--accent-purple)" /> Managed Key Groups
+          </h2>
+          <div className="grid grid-3">
+            {groups.map(g => (
+              <motion.div key={g.id} className="card" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ padding: 20 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                  <div>
+                    <h3 style={{ fontSize: 16, fontWeight: 700 }}>{g.name}</h3>
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>{g.description || 'No description'}</p>
+                  </div>
+                  <span className="badge" style={{ background: 'var(--accent-purple-glow)', color: 'var(--accent-purple)', border: '1px solid rgba(168,85,247,0.2)' }}>
+                    {g.strategy}
+                  </span>
+                </div>
+                
+                <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {g.members.length === 0 ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic' }}>No keys in this group</div>
+                  ) : (
+                    g.members.map((m, i) => (
+                      <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, background: 'rgba(255,255,255,0.03)', padding: '6px 10px', borderRadius: 6 }}>
+                        <div style={{ width: 6, height: 6, borderRadius: '50%', background: m.is_enabled ? 'var(--accent-emerald)' : 'var(--text-muted)' }} />
+                        <span style={{ fontWeight: 600 }}>{m.key_name}</span>
+                        <span style={{ color: 'var(--text-muted)', marginLeft: 'auto', fontSize: 11 }}>{m.provider}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+                
+                <div style={{ display: 'flex', gap: 8, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+                  <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={() => attemptAction({ type: 'manage_group', group: g })}>
+                    <Settings size={14} /> Manage
+                  </button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => executeDeleteGroup(g.id)}>
+                    <Trash2 size={14} color="var(--accent-rose)" />
+                  </button>
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* ── Time Range Selector ── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 20, flexWrap: 'wrap' }}>
         <Clock size={14} color="var(--text-muted)" />
@@ -383,29 +598,36 @@ export default function ApiVault() {
       {/* ── Analytics Grid ── */}
       {processedHistory.length > 0 && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
-          {/* Token Usage — Full Width */}
+          {/* Token Usage — Stacked Area by Key */}
           <motion.div className="chart-container" style={{ gridColumn: '1 / -1' }}
             initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
             <h3 className="chart-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <span><Zap size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 8, color: '#a855f7' }} />Token Usage</span>
+              <span><Zap size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 8, color: '#a855f7' }} />Per-Key Token Usage</span>
               <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
                 Total: {processedHistory.reduce((s, d) => s + d.total_tokens, 0).toLocaleString()}
               </span>
             </h3>
-            <div style={{ height: 220 }}>
+            <div style={{ height: 260 }}>
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={processedHistory}>
-                  <defs>
-                    <linearGradient id="tokenGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#a855f7" stopOpacity={0.3} />
-                      <stop offset="100%" stopColor="#a855f7" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
                   <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} stroke="transparent" tickFormatter={d => d.length > 5 ? d.slice(5) : d} />
                   <YAxis tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} stroke="transparent" width={45} tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(1)}k` : v} />
                   <Tooltip content={<CustomTooltip />} />
-                  <Area type="monotone" dataKey="total_tokens" stroke="#a855f7" fill="url(#tokenGrad)" strokeWidth={2.5} name="Tokens" dot={false} activeDot={{ r: 4, fill: '#a855f7', stroke: '#fff', strokeWidth: 2 }} />
+                  {perKey.map((pk, idx) => (
+                    <Area 
+                      key={pk.id} 
+                      type="monotone" 
+                      dataKey={pk.name} 
+                      stackId="1" 
+                      stroke={KEY_COLORS[idx % KEY_COLORS.length]} 
+                      fill={KEY_COLORS[idx % KEY_COLORS.length]} 
+                      fillOpacity={0.6}
+                      strokeWidth={1.5}
+                      dot={false}
+                      activeDot={{ r: 4, strokeWidth: 0 }}
+                    />
+                  ))}
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -580,6 +802,9 @@ export default function ApiVault() {
                               // Find numeric index for the key
                               const globalIdx = keys.findIndex(k => k.id === key.id);
                               const pkData = perKey.find(pk => pk.id === key.id);
+                              // Check if part of a group
+                              const groupMembership = groups.find(g => g.members.some(m => m.api_key_id === key.id));
+                              
                               return (
                                 <motion.div key={key.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
                                   className="card card-interactive" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -599,13 +824,23 @@ export default function ApiVault() {
                                     </div>
                                     <StatusBadge status={key.status} />
                                   </div>
+                                  
+                                  {groupMembership && (
+                                    <div style={{ fontSize: 11, background: 'var(--bg-input)', padding: '4px 8px', borderRadius: 4, display: 'inline-flex', alignItems: 'center', gap: 6, alignSelf: 'flex-start' }}>
+                                      <Layers size={10} color="var(--accent-purple)" /> In Group: {groupMembership.name}
+                                    </div>
+                                  )}
+                                  
                                   <CategoryEditor
                                     category={key.category}
                                     suggestions={allCategories.filter(c => c !== key.category)}
                                     onSave={cat => handleCategoryChange(key.id, cat)}
                                   />
-                                  <div onClick={() => setSelectedKey(key)} style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 8 }}>
-                                    <KeyRound size={13} style={{ opacity: 0.5 }} /> ********************
+                                  <div style={{ background: 'rgba(0,0,0,0.3)', padding: '10px 14px', borderRadius: 'var(--radius-sm)', fontFamily: 'var(--font-mono)', fontSize: 13, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}><KeyRound size={13} style={{ opacity: 0.5 }} /> ********************</span>
+                                    <button className="btn btn-ghost btn-sm" style={{ padding: 4 }} onClick={(e) => { e.stopPropagation(); attemptAction({ type: 'reveal', key }); }} title="Reveal Key">
+                                      <Eye size={14} color="var(--accent-indigo)" />
+                                    </button>
                                   </div>
                                   {/* Mini stats */}
                                   {pkData && (
@@ -619,7 +854,7 @@ export default function ApiVault() {
                                     <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Checked: {new Date(key.last_checked).toLocaleString()}</div>
                                     <div style={{ display: 'flex', gap: 4 }}>
                                       <button className="btn btn-ghost btn-icon" onClick={(e) => handleCheck(e, key.id)} title="Re-validate"><RefreshCw size={14} /></button>
-                                      <button className="btn btn-ghost btn-icon" onClick={(e) => { e.stopPropagation(); attemptDelete(key.id); }} title="Delete">
+                                      <button className="btn btn-ghost btn-icon" onClick={(e) => { e.stopPropagation(); attemptAction({ type: 'delete', id: key.id }); }} title="Delete">
                                         {sending && requireOtpFor?.id === key.id ? <div className="spinner" style={{width:14,height:14}}/> : <Trash2 size={14} color="var(--accent-rose)" />}
                                       </button>
                                     </div>
@@ -639,8 +874,14 @@ export default function ApiVault() {
         </div>
       )}
 
+      {/* ── Modals ── */}
+      
       <AnimatePresence>
         {selectedKey && <DetailModal apiKey={selectedKey} onClose={() => setSelectedKey(null)} />}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {revealKey && <RevealModal revealKey={revealKey} onClose={() => setRevealKey(null)} vaultUnlocked={vaultUnlocked} />}
       </AnimatePresence>
 
       <AnimatePresence>
@@ -704,6 +945,105 @@ export default function ApiVault() {
                   {adding ? <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> : 'Validate & Save'}
                 </button>
               </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showCreateGroup && (
+          <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowCreateGroup(false)}>
+            <motion.div className="modal-panel" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2 className="modal-title">Create Key Group</h2>
+                <button className="btn btn-ghost btn-icon" onClick={() => setShowCreateGroup(false)}><X size={18} /></button>
+              </div>
+              <form onSubmit={handleCreateGroup} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div className="form-group">
+                  <label className="form-label">Group Name</label>
+                  <input required className="form-input" placeholder="e.g. Production Gemini Keys" value={groupForm.name} onChange={e => setGroupForm({...groupForm, name: e.target.value})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Description <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                  <input className="form-input" placeholder="Used for text generation backend" value={groupForm.description} onChange={e => setGroupForm({...groupForm, description: e.target.value})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Rotation Strategy</label>
+                  <select className="form-select" value={groupForm.strategy} onChange={e => setGroupForm({...groupForm, strategy: e.target.value})}>
+                    {STRATEGIES.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    {groupForm.strategy === 'round-robin' && "Distributes load evenly across all active keys."}
+                    {groupForm.strategy === 'fallback' && "Always uses the primary key, failing over to others only if it fails."}
+                    {groupForm.strategy === 'random' && "Picks a random active key for each request."}
+                  </p>
+                </div>
+                <button type="submit" className="btn btn-primary" disabled={adding} style={{ marginTop: 8 }}>
+                  {adding ? <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> : 'Create Group'}
+                </button>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {manageGroup && (
+          <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setManageGroup(null)}>
+            <motion.div className="modal-panel" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <div>
+                  <h2 className="modal-title">Manage Group: {manageGroup.name}</h2>
+                  <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>{manageGroup.description || 'No description'}</p>
+                </div>
+                <button className="btn btn-ghost btn-icon" onClick={() => setManageGroup(null)}><X size={18} /></button>
+              </div>
+              
+              <div style={{ marginBottom: 24 }}>
+                <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 12 }}>Group Members</h3>
+                {manageGroup.members.length === 0 ? (
+                  <div className="empty-state" style={{ padding: 20 }}>
+                    <p style={{ margin: 0 }}>No keys in this group.</p>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {manageGroup.members.map(m => (
+                      <div key={m.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 12, background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <KeyRound size={16} color="var(--accent-indigo)" />
+                          <div>
+                            <div style={{ fontSize: 14, fontWeight: 600 }}>{m.key_name}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{m.provider}</div>
+                          </div>
+                        </div>
+                        <button className="btn btn-ghost btn-icon" onClick={() => handleRemoveMember(manageGroup.id, m.id)} title="Remove from group">
+                          <Trash2 size={16} color="var(--accent-rose)" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              
+              <div>
+                <h3 style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 12 }}>Add Available Keys</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 200, overflowY: 'auto' }}>
+                  {keys.filter(k => !manageGroup.members.some(m => m.api_key_id === k.id)).map(k => (
+                    <div key={k.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 12, background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 8 }}>
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 600 }}>{k.name}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{k.provider} • {k.category || 'Uncategorized'}</div>
+                      </div>
+                      <button className="btn btn-secondary btn-sm" onClick={() => handleAddMemberToGroup(manageGroup.id, k.id)}>
+                        <Plus size={14} /> Add
+                      </button>
+                    </div>
+                  ))}
+                  {keys.filter(k => !manageGroup.members.some(m => m.api_key_id === k.id)).length === 0 && (
+                     <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic', padding: 10, textAlign: 'center' }}>All your API keys are already in this group.</div>
+                  )}
+                </div>
+              </div>
             </motion.div>
           </motion.div>
         )}
