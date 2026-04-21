@@ -67,6 +67,8 @@ export const updateKeyGroup = (id, data) => api.patch(`/keygroups/${id}`, data).
 export const deleteKeyGroup = (id) => api.delete(`/keygroups/${id}`);
 export const addGroupMember = (groupId, data) => api.post(`/keygroups/${groupId}/members`, data).then(r => r.data);
 export const removeGroupMember = (groupId, memberId) => api.delete(`/keygroups/${groupId}/members/${memberId}`);
+export const updateGroupMember = (groupId, memberId, data) => api.patch(`/keygroups/${groupId}/members/${memberId}`, data).then(r => r.data);
+
 // ── Gateway API Keys (Cloud Command Keys) ──
 export const getGatewayKeys = () => api.get('/gateway-keys').then(r => r.data);
 export const createGatewayKey = (data) => api.post('/gateway-keys', data).then(r => r.data);

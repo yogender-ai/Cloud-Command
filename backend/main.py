@@ -13,7 +13,7 @@ from sqlalchemy import inspect
 from database import engine, SessionLocal
 from models import Base, PlatformVisit
 import models
-from routers import auth, monitors, logs, apikeys, platform_accounts, analytics, gateway, keygroups, gateway_keys
+
 from config import settings
 from limiter import limiter
 from slowapi import _rate_limit_exceeded_handler
