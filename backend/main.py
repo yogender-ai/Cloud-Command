@@ -131,7 +131,6 @@ from routers.settings import router as settings_router
 from routers.tracking import router as tracking_router
 from routers.gateway import router as gateway_router
 from routers.gateway_keys import router as gateway_keys_router
-from routers.analytics import router as analytics_router
 
 app.include_router(auth_router)
 app.include_router(monitors_router)
@@ -143,7 +142,6 @@ app.include_router(settings_router)
 app.include_router(tracking_router)
 app.include_router(gateway_router)
 app.include_router(gateway_keys_router)
-app.include_router(analytics_router)
 
 
 # ── Utility Endpoints ──
