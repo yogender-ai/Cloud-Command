@@ -1,12 +1,21 @@
+import asyncio
 import json
 import httpx
 from fastapi import APIRouter, Request, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
+import re
 import models
 from dependencies import get_db
 from security import decrypt_value
+
+try:
+    from gradio_client import Client as GradioClient
+except Exception:
+    GradioClient = None
+
+_HF_SPACE_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 router = APIRouter(prefix="/api/gateway", tags=["gateway"])
 
@@ -154,7 +163,7 @@ async def _proxy_gateway_request(
     
     query_params = dict(request.query_params)
     
-    # ── UNIVERSAL PROVIDER MAPPING ──
+    # â”€â”€ UNIVERSAL PROVIDER MAPPING â”€â”€
     provider_urls = {
         "gemini": "https://generativelanguage.googleapis.com",
         "openai": "https://api.openai.com",
@@ -277,6 +286,86 @@ async def proxy_huggingface(
 ):
     return await _proxy_gateway_request("huggingface", path, request, background_tasks, user_id, db)
 
+
+@router.post("/huggingface-space/{owner}/{space}/{endpoint}")
+async def proxy_huggingface_space(
+    owner: str,
+    space: str,
+    endpoint: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user_id: int = Depends(verify_gateway_auth),
+    db: Session = Depends(get_db),
+):
+    """
+    Proxy a call to a Hugging Face Space Gradio endpoint using the gateway secret only.
+
+    Client calls:
+      POST /api/gateway/huggingface-space/{owner}/{space}/{endpoint}
+
+    Body:
+      {"inputs": "..."}  (News-Intel style)
+    """
+    if GradioClient is None:
+        raise HTTPException(
+            status_code=500,
+            detail="gradio-client is not installed on the server. Add \"gradio-client\" to backend/requirements.txt and redeploy.",
+        )
+
+    space_id = f"{owner}/{space}"
+    if not _HF_SPACE_ID_RE.match(space_id):
+        raise HTTPException(status_code=400, detail="Invalid space id format. Expected: <owner>/<space>.")
+
+    category = request.headers.get("X-Project-Category")
+    api_key = get_active_key(db, user_id, "huggingface", category)
+    if not api_key:
+        raise HTTPException(status_code=404, detail="No active API key found for provider: huggingface")
+
+    plaintext_key = decrypt_value(api_key.encrypted_key)
+
+    try:
+        payload = await request.json()
+    except Exception:
+        payload = {}
+
+    input_text = payload.get("inputs") or payload.get("text") or payload.get("input")
+    if input_text is None and isinstance(payload.get("data"), list) and payload["data"]:
+        input_text = payload["data"][0]
+
+    if input_text is None:
+        raise HTTPException(status_code=400, detail="Missing input. Provide JSON body with \"inputs\".")
+
+    api_name = f"/{endpoint.lstrip(\"/\")}"
+
+    def _call_space():
+        # Support both new and old gradio_client constructor param names.
+        if "hf_token" in GradioClient.__init__.__code__.co_varnames:
+            client = GradioClient(space_id, hf_token=plaintext_key)
+        else:
+            client = GradioClient(space_id, token=plaintext_key)
+        return client.predict(input_text, api_name=api_name)
+
+    try:
+        result_raw = await asyncio.to_thread(_call_space)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Space proxy error: {str(e)}")
+
+    background_tasks.add_task(
+        log_api_usage,
+        db,
+        api_key.id,
+        0,
+        200,
+        False,
+        api_key_name=api_key.name,
+    )
+
+    if isinstance(result_raw, (dict, list)):
+        return Response(content=json.dumps(result_raw), media_type="application/json")
+    if isinstance(result_raw, str):
+        media = "application/json" if result_raw.lstrip().startswith(("{", "[")) else "text/plain"
+        return Response(content=result_raw, media_type=media)
+    return Response(content=json.dumps({"result": result_raw}), media_type="application/json")
 
 @router.api_route("/{provider}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
 async def proxy_gateway_root(
