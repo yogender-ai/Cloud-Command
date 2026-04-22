@@ -335,7 +335,7 @@ async def proxy_huggingface_space(
     if input_text is None:
         raise HTTPException(status_code=400, detail="Missing input. Provide JSON body with \"inputs\".")
 
-    api_name = f"/{endpoint.lstrip(\"/\")}"
+    api_name = f"/{endpoint.lstrip('/')}"
 
     def _call_space():
         # Support both new and old gradio_client constructor param names.
