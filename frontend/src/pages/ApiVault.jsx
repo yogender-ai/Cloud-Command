@@ -177,6 +177,7 @@ export default function ApiVault() {
   const [showAdd, setShowAdd] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [manageGroup, setManageGroup] = useState(null);
+  const [groupAnalytics, setGroupAnalytics] = useState(null);
   
   // Forms
   const [form, setForm] = useState({ name: '', provider: 'OpenAI', category: '', key_value: '' });
@@ -402,6 +403,51 @@ export default function ApiVault() {
   });
 
   const perKey = summary?.per_key || [];
+  const keyIdToName = Object.fromEntries(perKey.map(k => [k.id, k.name]));
+
+  const groupHistory = groupAnalytics ? (summary?.usage_history || []).map(d => {
+    const memberNames = (groupAnalytics.members || [])
+      .map(m => keyIdToName[m.api_key_id] || m.key_name)
+      .filter(Boolean);
+
+    const perTok = d.per_key_tokens || {};
+    const perReq = d.per_key_requests || {};
+    const perErr = d.per_key_errors || {};
+
+    let total_tokens = 0, total_requests = 0, failed_requests = 0;
+    const stacked = {};
+    for (const name of memberNames) {
+      const t = perTok[name] || 0;
+      const r = perReq[name] || 0;
+      const e = perErr[name] || 0;
+      stacked[name] = t;
+      total_tokens += t;
+      total_requests += r;
+      failed_requests += e;
+    }
+
+    return {
+      ...d,
+      ...stacked,
+      total_tokens,
+      total_requests,
+      failed_requests,
+      success_requests: total_requests - failed_requests,
+      success_rate: total_requests > 0 ? Math.round(((total_requests - failed_requests) / total_requests) * 100) : 100,
+    };
+  }) : [];
+
+  const groupTotals = groupAnalytics ? (() => {
+    const ids = new Set((groupAnalytics.members || []).map(m => m.api_key_id));
+    const ks = perKey.filter(k => ids.has(k.id));
+    const total_tokens = ks.reduce((s, k) => s + (k.total_tokens || 0), 0);
+    const total_requests = ks.reduce((s, k) => s + (k.total_requests || 0), 0);
+    const failed_requests = ks.reduce((s, k) => s + (k.failed_requests || 0), 0);
+    return { total_tokens, total_requests, failed_requests, keys: ks };
+  })() : null;
+  const groupMemberNames = groupAnalytics ? (groupAnalytics.members || [])
+    .map(m => keyIdToName[m.api_key_id] || m.key_name)
+    .filter(Boolean) : [];
 
   return (
     <div className="page-container">
@@ -458,7 +504,15 @@ export default function ApiVault() {
           </h2>
           <div className="grid grid-3">
             {groups.map(g => (
-              <motion.div key={g.id} className="card" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ padding: 20 }}>
+              <motion.div
+                key={g.id}
+                className="card"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                style={{ padding: 20, cursor: 'pointer' }}
+                onClick={() => setGroupAnalytics(g)}
+                title="Click to view group analytics"
+              >
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
                   <div>
                     <h3 style={{ fontSize: 16, fontWeight: 700 }}>{g.name}</h3>
@@ -484,10 +538,10 @@ export default function ApiVault() {
                 </div>
                 
                 <div style={{ display: 'flex', gap: 8, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
-                  <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={() => attemptAction({ type: 'manage_group', group: g })}>
+                  <button className="btn btn-secondary btn-sm" style={{ flex: 1 }} onClick={(e) => { e.stopPropagation(); attemptAction({ type: 'manage_group', group: g }); }}>
                     <Settings size={14} /> Manage
                   </button>
-                  <button className="btn btn-ghost btn-sm" onClick={() => executeDeleteGroup(g.id)}>
+                  <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); executeDeleteGroup(g.id); }}>
                     <Trash2 size={14} color="var(--accent-rose)" />
                   </button>
                 </div>
@@ -893,6 +947,158 @@ export default function ApiVault() {
                   {adding ? <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> : 'Create Group'}
                 </button>
               </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {groupAnalytics && (
+          <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setGroupAnalytics(null)}>
+            <motion.div className="modal-panel" style={{ maxWidth: 980 }} initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.96 }} onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <div>
+                  <h2 className="modal-title">Group Analytics: {groupAnalytics.name}</h2>
+                  <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>{groupAnalytics.description || 'No description'}</p>
+                </div>
+                <button className="btn btn-ghost btn-icon" onClick={() => setGroupAnalytics(null)}><X size={18} /></button>
+              </div>
+
+              {groupTotals && (
+                <div className="grid grid-3" style={{ marginBottom: 18, gap: 12 }}>
+                  {[
+                    { icon: <Zap size={18} />, label: 'Tokens (Est.)', value: (groupTotals.total_tokens || 0).toLocaleString(), color: '#a855f7', glow: 'var(--accent-purple-glow)' },
+                    { icon: <Server size={18} />, label: 'Requests', value: groupTotals.total_requests || 0, color: '#0ea5e9', glow: 'rgba(14,165,233,0.1)' },
+                    { icon: <Flame size={18} />, label: 'Errors', value: groupTotals.failed_requests || 0, color: '#f43f5e', glow: 'rgba(244,63,94,0.1)' },
+                    { icon: <TrendingUp size={18} />, label: 'Success Rate', value: groupTotals.total_requests > 0 ? `${Math.round(((groupTotals.total_requests - groupTotals.failed_requests) / groupTotals.total_requests) * 100)}%` : '—', color: '#10b981', glow: 'rgba(16,185,129,0.1)' },
+                    { icon: <Layers size={18} />, label: 'Keys', value: groupTotals.keys.length, color: '#6366f1', glow: 'rgba(99,102,241,0.1)' },
+                    { icon: <Clock size={18} />, label: 'Window', value: TIME_RANGES.find(t => t.key === timeRange)?.label || timeRange, color: '#f59e0b', glow: 'rgba(245,158,11,0.1)' },
+                  ].map((s, i) => (
+                    <div key={i} className="card stat-card" style={{ borderLeft: `3px solid ${s.color}` }}>
+                      <div className="stat-icon" style={{ background: s.glow }}>{React.cloneElement(s.icon, { color: s.color })}</div>
+                      <div>
+                        <div className="stat-label">{s.label}</div>
+                        <div className="stat-value" style={{ color: s.color }}>{s.value}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {groupHistory.length > 0 ? (
+                <div className="grid grid-2" style={{ gap: 14 }}>
+                  <div className="chart-container" style={{ margin: 0 }}>
+                    <h3 className="chart-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span><Zap size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 8, color: '#a855f7' }} />Group Token Usage</span>
+                      <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                        Total: {groupHistory.reduce((s, d) => s + (d.total_tokens || 0), 0).toLocaleString()}
+                      </span>
+                    </h3>
+                    <div style={{ height: 260 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <AreaChart data={groupHistory}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                          <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} stroke="transparent" tickFormatter={d => d.length > 5 ? d.slice(5) : d} />
+                          <YAxis tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} stroke="transparent" width={45} tickFormatter={v => v >= 1000 ? `${(v/1000).toFixed(1)}k` : v} />
+                          <Tooltip content={<CustomTooltip />} />
+                          {groupMemberNames.map((name, idx) => (
+                            <Area
+                              key={name}
+                              type="monotone"
+                              dataKey={name}
+                              stackId="1"
+                              stroke={KEY_COLORS[idx % KEY_COLORS.length]}
+                              fill={KEY_COLORS[idx % KEY_COLORS.length]}
+                              fillOpacity={0.6}
+                              strokeWidth={1.5}
+                              dot={false}
+                              activeDot={{ r: 4, strokeWidth: 0 }}
+                            />
+                          ))}
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  <div className="chart-container" style={{ margin: 0 }}>
+                    <h3 className="chart-title"><BarChart3 size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 8, color: '#6366f1' }} />Group Requests</h3>
+                    <div style={{ height: 260 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <ComposedChart data={groupHistory}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                          <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} stroke="transparent" tickFormatter={d => d.length > 5 ? d.slice(5) : d} />
+                          <YAxis yAxisId="left" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} stroke="transparent" width={30} allowDecimals={false} />
+                          <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} stroke="transparent" width={35} domain={[0, 100]} tickFormatter={v => `${v}%`} />
+                          <Tooltip content={<CustomTooltip />} />
+                          <Bar yAxisId="left" dataKey="success_requests" stackId="a" fill="rgba(99,102,241,0.4)" radius={[0,0,0,0]} name="Success" barSize={14} />
+                          <Bar yAxisId="left" dataKey="failed_requests" stackId="a" fill="rgba(244,63,94,0.6)" radius={[3,3,0,0]} name="Errors" barSize={14} />
+                          <Line yAxisId="right" type="monotone" dataKey="success_rate" stroke="#10b981" strokeWidth={2} dot={false} name="Success Rate %" />
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  <div className="chart-container" style={{ margin: 0 }}>
+                    <h3 className="chart-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span><Flame size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 8, color: '#f43f5e' }} />Group Errors</span>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: '#f43f5e', fontFamily: 'var(--font-mono)' }}>
+                        {groupHistory.reduce((s, d) => s + (d.failed_requests || 0), 0)} total
+                      </span>
+                    </h3>
+                    <div style={{ height: 220 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={groupHistory}>
+                          <defs>
+                            <linearGradient id="groupErrorGrad" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor="#f43f5e" stopOpacity={0.6} />
+                              <stop offset="100%" stopColor="#f43f5e" stopOpacity={0.1} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                          <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} stroke="transparent" tickFormatter={d => d.length > 5 ? d.slice(5) : d} />
+                          <YAxis tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} stroke="transparent" width={30} allowDecimals={false} />
+                          <Tooltip content={<CustomTooltip />} />
+                          <Bar dataKey="failed_requests" fill="url(#groupErrorGrad)" radius={[6,6,0,0]} name="Errors" />
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {groupTotals?.keys?.length > 0 && (
+                    <div className="chart-container" style={{ margin: 0 }}>
+                      <h3 className="chart-title"><Layers size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 8, color: 'var(--accent-purple)' }} />Keys in Group</h3>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 220, overflowY: 'auto' }}>
+                        {groupTotals.keys
+                          .slice()
+                          .sort((a, b) => (b.total_requests || 0) - (a.total_requests || 0))
+                          .map((k, idx) => (
+                            <div key={k.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: 12, borderRadius: 10, border: '1px solid var(--border)', background: 'rgba(255,255,255,0.02)' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div style={{ width: 10, height: 10, borderRadius: '50%', background: KEY_COLORS[idx % KEY_COLORS.length] }} />
+                                <div>
+                                  <div style={{ fontSize: 13, fontWeight: 700 }}>{k.name}</div>
+                                  <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{k.provider} • {k.category || 'Uncategorized'}</div>
+                                </div>
+                              </div>
+                              <div style={{ display: 'flex', gap: 10, fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)' }}>
+                                <span title="Tokens">{(k.total_tokens || 0).toLocaleString()} tok</span>
+                                <span title="Requests">{k.total_requests || 0} req</span>
+                                <span title="Errors" style={{ color: (k.failed_requests || 0) > 0 ? 'var(--accent-rose)' : 'var(--text-muted)' }}>{k.failed_requests || 0} err</span>
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                      <p style={{ marginTop: 10, fontSize: 11, color: 'var(--text-muted)' }}>
+                        Note: Hugging Face token usage is estimated (character-based) because most HF endpoints don’t return official token counts.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="empty-state" style={{ padding: 20 }}>
+                  <p style={{ margin: 0 }}>No usage data yet for this group in the selected window.</p>
+                </div>
+              )}
             </motion.div>
           </motion.div>
         )}

@@ -1,6 +1,7 @@
 import asyncio
 import json
 import httpx
+import math
 from fastapi import APIRouter, Request, Depends, HTTPException, BackgroundTasks
 from fastapi.responses import StreamingResponse, Response
 from sqlalchemy.orm import Session
@@ -18,6 +19,108 @@ except Exception:
 _HF_SPACE_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 router = APIRouter(prefix="/api/gateway", tags=["gateway"])
+
+_HF_TEXT_IN_KEYS = {"inputs", "input", "text", "prompt", "query"}
+_HF_TEXT_OUT_KEYS = {"generated_text", "summary_text", "text", "answer", "output", "translation_text"}
+
+
+def _estimate_tokens_from_text(text: str | None) -> int:
+    """
+    Heuristic token estimation for providers that don't return usage metadata.
+    ~4 characters per token (roughly), clamped to >= 1 for non-empty strings.
+    """
+    if not text:
+        return 0
+    t = math.ceil(len(text) / 4)
+    return max(1, int(t))
+
+
+def _collect_strings(obj, max_items: int = 16) -> list[str]:
+    out: list[str] = []
+
+    def _walk(x):
+        nonlocal out
+        if len(out) >= max_items:
+            return
+        if isinstance(x, str):
+            s = x.strip()
+            if s:
+                out.append(s)
+            return
+        if isinstance(x, dict):
+            for v in x.values():
+                _walk(v)
+                if len(out) >= max_items:
+                    return
+            return
+        if isinstance(x, list):
+            for v in x:
+                _walk(v)
+                if len(out) >= max_items:
+                    return
+            return
+
+    _walk(obj)
+    return out
+
+
+def _collect_text_fields(obj, allowed_keys: set[str], max_items: int = 16) -> list[str]:
+    out: list[str] = []
+
+    def _walk(x):
+        nonlocal out
+        if len(out) >= max_items:
+            return
+        if isinstance(x, dict):
+            for k, v in x.items():
+                if len(out) >= max_items:
+                    return
+                if isinstance(k, str) and k in allowed_keys:
+                    for s in _collect_strings(v, max_items=max_items - len(out)):
+                        if len(out) >= max_items:
+                            return
+                        out.append(s)
+                else:
+                    _walk(v)
+            return
+        if isinstance(x, list):
+            for v in x:
+                _walk(v)
+                if len(out) >= max_items:
+                    return
+            return
+
+    _walk(obj)
+    return out
+
+
+def _safe_json_loads(data: bytes) -> object | None:
+    try:
+        return json.loads(data)
+    except Exception:
+        try:
+            return json.loads(data.decode("utf-8", errors="ignore"))
+        except Exception:
+            return None
+
+
+def _estimate_huggingface_tokens(request_body: bytes, response_body: bytes) -> int:
+    req_json = _safe_json_loads(request_body) if request_body else None
+    res_json = _safe_json_loads(response_body) if response_body else None
+
+    in_texts = _collect_text_fields(req_json, _HF_TEXT_IN_KEYS) if req_json is not None else []
+    out_texts = _collect_text_fields(res_json, _HF_TEXT_OUT_KEYS) if res_json is not None else []
+
+    # Fallback: if we couldn't find known fields, just grab a couple of strings.
+    if not in_texts and req_json is not None:
+        in_texts = _collect_strings(req_json, max_items=4)
+    if not out_texts and res_json is not None:
+        out_texts = _collect_strings(res_json, max_items=4)
+
+    input_text = " ".join(in_texts) if in_texts else ""
+    output_text = " ".join(out_texts) if out_texts else ""
+    return _estimate_tokens_from_text(input_text) + _estimate_tokens_from_text(output_text)
+
 
 def log_api_usage(db: Session, api_key_id: int, tokens_used: int, status_code: int = 200, is_error: bool = False, api_key_name: str = None):
     log = models.ApiUsageLog(
@@ -236,6 +339,10 @@ async def _proxy_gateway_request(
                     tracked_tokens = data["usageMetadata"].get("totalTokenCount", 0)
         except Exception:
             pass
+
+        # Hugging Face inference responses typically don't include usage metadata.
+        if tracked_tokens == 0 and provider == "huggingface":
+            tracked_tokens = _estimate_huggingface_tokens(body, resp_bytes)
             
         background_tasks.add_task(log_api_usage, db, api_key.id, tracked_tokens, resp.status_code, resp.status_code >= 400, api_key_name=api_key.name)
             
@@ -350,11 +457,18 @@ async def proxy_huggingface_space(
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Space proxy error: {str(e)}")
 
+    estimated_tokens = 0
+    try:
+        out_text = result_raw if isinstance(result_raw, str) else json.dumps(result_raw)
+        estimated_tokens = _estimate_tokens_from_text(input_text) + _estimate_tokens_from_text(out_text)
+    except Exception:
+        estimated_tokens = _estimate_tokens_from_text(input_text)
+
     background_tasks.add_task(
         log_api_usage,
         db,
         api_key.id,
-        0,
+        estimated_tokens,
         200,
         False,
         api_key_name=api_key.name,

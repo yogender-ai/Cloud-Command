@@ -267,6 +267,7 @@ def get_summary(
     """Get API key usage summary with flexible time ranges."""
     keys = db.query(models.ApiKey).filter(models.ApiKey.user_id == user.id).all()
     key_ids = [k.id for k in keys]
+    key_name_map = {k.id: k.name for k in keys}
 
     total = len(keys)
     active = len([k for k in keys if "active" in k.status.lower()])
@@ -314,12 +315,28 @@ def get_summary(
                 models.ApiUsageLog.timestamp >= minute_start,
                 models.ApiUsageLog.timestamp < minute_end,
             ).all()
-            t = sum(l.tokens_used for l in logs)
+            per_key_tokens = {k.name: 0 for k in keys}
+            per_key_requests = {k.name: 0 for k in keys}
+            per_key_errors = {k.name: 0 for k in keys}
+            for l in logs:
+                name = key_name_map.get(l.api_key_id)
+                if not name:
+                    continue
+                per_key_tokens[name] = per_key_tokens.get(name, 0) + (l.tokens_used or 0)
+                per_key_requests[name] = per_key_requests.get(name, 0) + 1
+                if l.is_error:
+                    per_key_errors[name] = per_key_errors.get(name, 0) + 1
+            t = sum(per_key_tokens.values())
             r = len(logs)
-            f = len([l for l in logs if l.is_error])
+            f = sum(per_key_errors.values())
             history.append({
                 "date": minute_end.strftime("%H:%M"),
-                "total_tokens": t, "total_requests": r, "failed_requests": f
+                "total_tokens": t,
+                "total_requests": r,
+                "failed_requests": f,
+                "per_key_tokens": per_key_tokens,
+                "per_key_requests": per_key_requests,
+                "per_key_errors": per_key_errors,
             })
     elif time_range == "1d":
         for i in range(23, -1, -1):
@@ -330,17 +347,33 @@ def get_summary(
                 models.ApiUsageLog.timestamp >= hour_start,
                 models.ApiUsageLog.timestamp < hour_end,
             ).all()
-            t = sum(l.tokens_used for l in logs)
+            per_key_tokens = {k.name: 0 for k in keys}
+            per_key_requests = {k.name: 0 for k in keys}
+            per_key_errors = {k.name: 0 for k in keys}
+            for l in logs:
+                name = key_name_map.get(l.api_key_id)
+                if not name:
+                    continue
+                per_key_tokens[name] = per_key_tokens.get(name, 0) + (l.tokens_used or 0)
+                per_key_requests[name] = per_key_requests.get(name, 0) + 1
+                if l.is_error:
+                    per_key_errors[name] = per_key_errors.get(name, 0) + 1
+            t = sum(per_key_tokens.values())
             r = len(logs)
-            f = len([l for l in logs if l.is_error])
+            f = sum(per_key_errors.values())
             history.append({
                 "date": hour_start.strftime("%H:%M"),
-                "total_tokens": t, "total_requests": r, "failed_requests": f
+                "total_tokens": t,
+                "total_requests": r,
+                "failed_requests": f,
+                "per_key_tokens": per_key_tokens,
+                "per_key_requests": per_key_requests,
+                "per_key_errors": per_key_errors,
             })
     elif time_range == "1m":
         for i in range(29, -1, -1):
             day = today - timedelta(days=i)
-            _append_day_stats(db, key_ids, day, history)
+            _append_day_stats(db, keys, key_ids, key_name_map, day, history)
     elif time_range == "1y":
         for i in range(11, -1, -1):
             month_date = today.replace(day=1) - timedelta(days=i * 30)
@@ -354,12 +387,28 @@ def get_summary(
                 func.date(models.ApiUsageLog.timestamp) >= month_start,
                 func.date(models.ApiUsageLog.timestamp) < month_end,
             ).all()
-            t = sum(l.tokens_used for l in logs)
+            per_key_tokens = {k.name: 0 for k in keys}
+            per_key_requests = {k.name: 0 for k in keys}
+            per_key_errors = {k.name: 0 for k in keys}
+            for l in logs:
+                name = key_name_map.get(l.api_key_id)
+                if not name:
+                    continue
+                per_key_tokens[name] = per_key_tokens.get(name, 0) + (l.tokens_used or 0)
+                per_key_requests[name] = per_key_requests.get(name, 0) + 1
+                if l.is_error:
+                    per_key_errors[name] = per_key_errors.get(name, 0) + 1
+            t = sum(per_key_tokens.values())
             r = len(logs)
-            f = len([l for l in logs if l.is_error])
+            f = sum(per_key_errors.values())
             history.append({
                 "date": month_start.strftime("%b %Y"),
-                "total_tokens": t, "total_requests": r, "failed_requests": f
+                "total_tokens": t,
+                "total_requests": r,
+                "failed_requests": f,
+                "per_key_tokens": per_key_tokens,
+                "per_key_requests": per_key_requests,
+                "per_key_errors": per_key_errors,
             })
     elif time_range == "all":
         first_log = db.query(models.ApiUsageLog).filter(
@@ -372,11 +421,11 @@ def get_summary(
             delta = 90
         for i in range(delta, -1, -1):
             day = today - timedelta(days=i)
-            _append_day_stats(db, key_ids, day, history)
+            _append_day_stats(db, keys, key_ids, key_name_map, day, history)
     else:
         for i in range(6, -1, -1):
             day = today - timedelta(days=i)
-            _append_day_stats(db, key_ids, day, history)
+            _append_day_stats(db, keys, key_ids, key_name_map, day, history)
 
     # Per-key breakdown
     per_key = []
@@ -405,13 +454,6 @@ def get_summary(
             "total_requests": k_requests,
             "failed_requests": k_errors,
         })
-
-    # Enrich history with per-key breakdown for charts
-    for entry in history:
-        per_key_usage = {}
-        for k in keys:
-            per_key_usage[k.name] = 0
-        entry["per_key_tokens"] = per_key_usage
 
     # Get key groups
     groups = db.query(models.ApiKeyGroup).filter(
@@ -452,38 +494,36 @@ def get_summary(
     }
 
 
-def _append_day_stats(db, key_ids, day, history):
+def _append_day_stats(db, keys, key_ids, key_name_map, day, history):
     """Helper to append a single day's stats to history."""
-    day_tokens = (
-        db.query(func.sum(models.ApiUsageLog.tokens_used))
-        .filter(
-            models.ApiUsageLog.api_key_id.in_(key_ids),
-            func.date(models.ApiUsageLog.timestamp) == day,
-        )
-        .scalar()
-    ) or 0
-    total_requests = (
-        db.query(models.ApiUsageLog)
-        .filter(
-            models.ApiUsageLog.api_key_id.in_(key_ids),
-            func.date(models.ApiUsageLog.timestamp) == day,
-        )
-        .count()
-    )
-    failed_requests = (
-        db.query(models.ApiUsageLog)
-        .filter(
-            models.ApiUsageLog.api_key_id.in_(key_ids),
-            func.date(models.ApiUsageLog.timestamp) == day,
-            models.ApiUsageLog.is_error == True,
-        )
-        .count()
-    )
+    logs = db.query(models.ApiUsageLog).filter(
+        models.ApiUsageLog.api_key_id.in_(key_ids),
+        func.date(models.ApiUsageLog.timestamp) == day,
+    ).all()
+
+    per_key_tokens = {k.name: 0 for k in keys}
+    per_key_requests = {k.name: 0 for k in keys}
+    per_key_errors = {k.name: 0 for k in keys}
+    for l in logs:
+        name = key_name_map.get(l.api_key_id)
+        if not name:
+            continue
+        per_key_tokens[name] = per_key_tokens.get(name, 0) + (l.tokens_used or 0)
+        per_key_requests[name] = per_key_requests.get(name, 0) + 1
+        if l.is_error:
+            per_key_errors[name] = per_key_errors.get(name, 0) + 1
+
+    day_tokens = sum(per_key_tokens.values())
+    total_requests = len(logs)
+    failed_requests = sum(per_key_errors.values())
     history.append({
         "date": day.isoformat(),
         "total_tokens": day_tokens,
         "total_requests": total_requests,
         "failed_requests": failed_requests,
+        "per_key_tokens": per_key_tokens,
+        "per_key_requests": per_key_requests,
+        "per_key_errors": per_key_errors,
     })
 
 
