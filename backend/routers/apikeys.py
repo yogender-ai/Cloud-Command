@@ -482,6 +482,28 @@ def get_summary(
             "created_at": g.created_at.isoformat() if g.created_at else None,
         })
 
+    recent_errors_q = (
+        db.query(models.ApiUsageLog)
+        .filter(
+            models.ApiUsageLog.api_key_id.in_(key_ids),
+            models.ApiUsageLog.is_error == True,
+        )
+        .order_by(models.ApiUsageLog.timestamp.desc())
+        .limit(20)
+        .all()
+    )
+    recent_errors_data = []
+    for e in recent_errors_q:
+        k = next((x for x in keys if x.id == e.api_key_id), None)
+        recent_errors_data.append({
+            "id": e.id,
+            "timestamp": e.timestamp.isoformat() if e.timestamp else None,
+            "key_name": k.name if k else e.api_key_name,
+            "provider": k.provider if k else None,
+            "status_code": e.status_code,
+            "error_message": e.error_message
+        })
+
     return {
         "total_keys": total,
         "active_keys": active,
@@ -491,6 +513,7 @@ def get_summary(
         "usage_history": history,
         "per_key": per_key,
         "key_groups": groups_data,
+        "recent_errors": recent_errors_data,
     }
 
 

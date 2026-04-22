@@ -723,6 +723,57 @@ export default function ApiVault() {
         </motion.div>
       )}
 
+      {/* ── Recent Errors Log ── */}
+      {summary?.recent_errors && summary.recent_errors.length > 0 && (
+        <motion.div className="chart-container" style={{ marginBottom: 24, border: '1px solid rgba(244,63,94,0.3)', background: 'rgba(244,63,94,0.02)' }}
+          initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
+          <h3 className="chart-title" style={{ color: '#f43f5e' }}><Flame size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 8, color: '#f43f5e' }} />Recent Failed Requests Tracker</h3>
+          <div style={{ overflowX: 'auto', maxHeight: 300, overflowY: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 4px', fontSize: 13 }}>
+              <thead>
+                <tr style={{ color: 'rgba(255,255,255,0.45)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>Time</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>Key Name</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600 }}>Provider</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'center', fontWeight: 600 }}>Status Code</th>
+                  <th style={{ padding: '8px 12px', textAlign: 'left', fontWeight: 600, width: '40%' }}>Error Message / Provider Response</th>
+                </tr>
+              </thead>
+              <tbody>
+                {summary.recent_errors.map((err, idx) => (
+                  <tr key={err.id} style={{
+                    background: 'rgba(255,255,255,0.02)', borderRadius: 8,
+                    transition: 'background 0.15s',
+                  }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.02)'}
+                  >
+                    <td style={{ padding: '10px 12px', color: 'var(--text-muted)', fontSize: 12, whiteSpace: 'nowrap' }}>
+                      {err.timestamp ? new Date(err.timestamp).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'}) : 'Unknown'}
+                    </td>
+                    <td style={{ padding: '10px 12px', fontWeight: 600, color: 'var(--text-primary)' }}>{err.key_name || 'Unknown Key'}</td>
+                    <td style={{ padding: '10px 12px' }}>
+                      {err.provider && (
+                        <span style={{ padding: '3px 10px', borderRadius: 99, background: 'rgba(99,102,241,0.1)', border: '1px solid rgba(99,102,241,0.2)', color: '#818cf8', fontSize: 11, fontWeight: 600 }}>
+                          {err.provider}
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: '10px 12px', textAlign: 'center', fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#f43f5e' }}>{err.status_code}</td>
+                    <td style={{ padding: '10px 12px', color: 'var(--text-muted)', fontSize: 12, fontFamily: 'var(--font-mono)', wordBreak: 'break-all' }}>
+                      <div style={{ maxHeight: 60, overflowY: 'auto' }}>
+                        {err.error_message || 'No specific error message provided by upstream.'}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </motion.div>
+      )}
+
+
       {/* Category filter */}
       {categories.length > 1 && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center' }}>

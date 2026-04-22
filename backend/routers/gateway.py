@@ -122,13 +122,14 @@ def _estimate_huggingface_tokens(request_body: bytes, response_body: bytes) -> i
     return _estimate_tokens_from_text(input_text) + _estimate_tokens_from_text(output_text)
 
 
-def log_api_usage(db: Session, api_key_id: int, tokens_used: int, status_code: int = 200, is_error: bool = False, api_key_name: str = None):
+def log_api_usage(db: Session, api_key_id: int, tokens_used: int, status_code: int = 200, is_error: bool = False, api_key_name: str = None, error_message: str = None):
     log = models.ApiUsageLog(
         api_key_id=api_key_id, 
         api_key_name=api_key_name,
         tokens_used=tokens_used, 
         status_code=status_code,
         is_error=is_error,
+        error_message=error_message,
         timestamp=datetime.now(timezone.utc)
     )
     db.add(log)
@@ -343,8 +344,17 @@ async def _proxy_gateway_request(
         # Hugging Face inference responses typically don't include usage metadata.
         if tracked_tokens == 0 and provider == "huggingface":
             tracked_tokens = _estimate_huggingface_tokens(body, resp_bytes)
+
+        error_message = None
+        if resp.status_code >= 400:
+            try:
+                error_message = resp_bytes.decode('utf-8', errors='ignore')
+                if len(error_message) > 500:
+                    error_message = error_message[:500] + "..."
+            except Exception:
+                pass
             
-        background_tasks.add_task(log_api_usage, db, api_key.id, tracked_tokens, resp.status_code, resp.status_code >= 400, api_key_name=api_key.name)
+        background_tasks.add_task(log_api_usage, db, api_key.id, tracked_tokens, resp.status_code, resp.status_code >= 400, api_key_name=api_key.name, error_message=error_message)
             
         filtered_headers = {k: v for k, v in resp.headers.items() if k.lower() not in ("content-length", "content-encoding")}
         return Response(content=resp_bytes, status_code=resp.status_code, headers=filtered_headers)
@@ -464,14 +474,19 @@ async def proxy_huggingface_space(
     except Exception:
         estimated_tokens = _estimate_tokens_from_text(input_text)
 
+    error_message = None
+    if isinstance(result_raw, Exception):
+        error_message = str(result_raw)
+
     background_tasks.add_task(
         log_api_usage,
         db,
         api_key.id,
         estimated_tokens,
-        200,
-        False,
+        200 if not error_message else 500,
+        bool(error_message),
         api_key_name=api_key.name,
+        error_message=error_message
     )
 
     if isinstance(result_raw, (dict, list)):

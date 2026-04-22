@@ -125,6 +125,7 @@ class ApiUsageLog(Base):
     tokens_used = Column(Integer, default=0)
     status_code = Column(Integer, default=200)
     is_error = Column(Boolean, default=False)
+    error_message = Column(Text, nullable=True)
     timestamp = Column(DateTime(timezone=True), default=utcnow)
 
     api_key = relationship("ApiKey", back_populates="usage_logs")

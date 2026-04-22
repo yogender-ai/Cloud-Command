@@ -95,6 +95,7 @@ class ApiKeyUsageResponse(BaseModel):
     api_key_name: Optional[str] = None
     tokens_used: int
     timestamp: datetime
+    error_message: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -108,6 +109,7 @@ class ApiUsageResponse(BaseModel):
     usage_history: List[dict]
     per_key: List[dict]
     key_groups: List["ApiKeyGroupResponse"]
+    recent_errors: List[dict] = []
 
 # ──────────────────────────────────────
 # GATEWAY API KEYS (Cloud Command Keys)
