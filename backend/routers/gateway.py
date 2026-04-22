@@ -120,8 +120,19 @@ def get_active_key(db: Session, user_id: int, provider: str, category: str = Non
         key = random.choice(keys) if keys else None
     return key
 
-@router.api_route("/{provider}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"])
-async def proxy_gateway(
+def _filtered_forward_headers(request: Request) -> dict:
+    # Strip hop-by-hop headers + gateway auth headers so we don't leak them upstream.
+    blocked = {
+        "host",
+        "connection",
+        "content-length",
+        "authorization",
+        "x-gateway-secret",
+        "x-project-category",
+    }
+    return {k: v for k, v in request.headers.items() if k.lower() not in blocked}
+
+async def _proxy_gateway_request(
     provider: str,
     path: str,
     request: Request,
@@ -139,9 +150,7 @@ async def proxy_gateway(
     plaintext_key = decrypt_value(api_key.encrypted_key)
     
     base_url = ""
-    headers = dict(request.headers)
-    headers.pop("host", None)
-    headers.pop("authorization", None) 
+    headers = _filtered_forward_headers(request)
     
     query_params = dict(request.query_params)
     
@@ -156,7 +165,7 @@ async def proxy_gateway(
         "xai": "https://api.x.ai",
         "grok": "https://api.x.ai",
         "cohere": "https://api.cohere.com",
-        "huggingface": "https://api-inference.huggingface.co",
+        "huggingface": "https://router.huggingface.co/hf-inference",
         "openrouter": "https://openrouter.ai/api",
     }
     
@@ -175,7 +184,10 @@ async def proxy_gateway(
         # all use standard Bearer token format natively.
         headers["Authorization"] = f"Bearer {plaintext_key}"
 
-    target_url = f"{base_url}/{path}"
+    if path:
+        target_url = f"{base_url}/{path}"
+    else:
+        target_url = f"{base_url}/"
     
     body = await request.body()
     
@@ -253,3 +265,37 @@ async def proxy_gateway(
 
     resp_headers = {k: v for k, v in resp.headers.items() if k.lower() not in ("content-length", "content-encoding")}
     return StreamingResponse(stream_generator(), status_code=resp.status_code, headers=resp_headers)
+
+
+@router.api_route("/huggingface/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+async def proxy_huggingface(
+    path: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user_id: int = Depends(verify_gateway_auth),
+    db: Session = Depends(get_db),
+):
+    return await _proxy_gateway_request("huggingface", path, request, background_tasks, user_id, db)
+
+
+@router.api_route("/{provider}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+async def proxy_gateway_root(
+    provider: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user_id: int = Depends(verify_gateway_auth),
+    db: Session = Depends(get_db),
+):
+    return await _proxy_gateway_request(provider, "", request, background_tasks, user_id, db)
+
+
+@router.api_route("/{provider}/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+async def proxy_gateway(
+    provider: str,
+    path: str,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    user_id: int = Depends(verify_gateway_auth),
+    db: Session = Depends(get_db),
+):
+    return await _proxy_gateway_request(provider, path, request, background_tasks, user_id, db)
