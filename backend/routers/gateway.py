@@ -124,9 +124,9 @@ def _estimate_huggingface_tokens(request_body: bytes, response_body: bytes) -> i
 
 def log_api_usage(db: Session, api_key_id: int, tokens_used: int, status_code: int = 200, is_error: bool = False, api_key_name: str = None, error_message: str = None):
     log = models.ApiUsageLog(
-        api_key_id=api_key_id, 
+        api_key_id=api_key_id,
         api_key_name=api_key_name,
-        tokens_used=tokens_used, 
+        tokens_used=tokens_used,
         status_code=status_code,
         is_error=is_error,
         error_message=error_message,
@@ -262,12 +262,10 @@ async def _proxy_gateway_request(
 
     plaintext_key = decrypt_value(api_key.encrypted_key)
     
-    base_url = ""
     headers = _filtered_forward_headers(request)
-    
     query_params = dict(request.query_params)
     
-    # â”€â”€ UNIVERSAL PROVIDER MAPPING â”€â”€
+    # ── UNIVERSAL PROVIDER MAPPING ──
     provider_urls = {
         "gemini": "https://generativelanguage.googleapis.com",
         "openai": "https://api.openai.com",
@@ -293,16 +291,47 @@ async def _proxy_gateway_request(
     elif provider == "anthropic":
         headers["x-api-key"] = plaintext_key
     else:
-        # OpenAI, DeepSeek, Groq, Mistral, xAI, Cohere, HuggingFace, OpenRouter 
+        # OpenAI, DeepSeek, Groq, Mistral, xAI, Cohere, HuggingFace, OpenRouter
         # all use standard Bearer token format natively.
         headers["Authorization"] = f"Bearer {plaintext_key}"
 
-    if path:
+    body = await request.body()
+
+    # ── Gemini smart-route ──
+    # When the caller doesn't supply a full Gemini API path (e.g. POSTs to
+    # /api/gateway/gemini with {"contents": [...]}), auto-construct the
+    # correct v1beta/models/{model}:generateContent URL.
+    # Default model: gemini-2.5-flash-lite (free tier, confirmed working).
+    # Callers can override by including a top-level "model" field in the
+    # JSON body, e.g. {"model": "gemini-2.5-flash", "contents": [...]}.
+    if provider == "gemini":
+        _GEMINI_DEFAULT_MODEL = "gemini-2.5-flash-lite"
+        _needs_auto_route = (
+            not path
+            or not any(seg in path for seg in ("models/", ":generateContent", ":streamGenerateContent"))
+        )
+        if _needs_auto_route:
+            model_name = _GEMINI_DEFAULT_MODEL
+            if body:
+                try:
+                    body_json = json.loads(body)
+                    if isinstance(body_json, dict) and body_json.get("model"):
+                        model_name = body_json["model"]
+                        if model_name.startswith("models/"):
+                            model_name = model_name[len("models/"):]
+                except Exception:
+                    pass
+            action = "streamGenerateContent" if request.headers.get("accept", "").startswith("text/event-stream") else "generateContent"
+            target_url = f"{base_url}/v1beta/models/{model_name}:{action}"
+        else:
+            # Caller provided a full path — ensure it uses v1beta not deprecated v1
+            if path.startswith("v1/"):
+                path = "v1beta/" + path[3:]
+            target_url = f"{base_url}/{path}"
+    elif path:
         target_url = f"{base_url}/{path}"
     else:
         target_url = f"{base_url}/"
-    
-    body = await request.body()
     
     client = httpx.AsyncClient(timeout=60.0)
     
@@ -367,12 +396,10 @@ async def _proxy_gateway_request(
                 try:
                     chunk_str = chunk.decode('utf-8', errors='ignore')
                     if provider == "gemini" and "usageMetadata" in chunk_str:
-                        import re
                         match = re.search(r'"totalTokenCount":\s*(\d+)', chunk_str)
                         if match:
                             tracked_tokens = max(tracked_tokens, int(match.group(1)))
                     elif "usage" in chunk_str:
-                        import re
                         match = re.search(r'"total_tokens":\s*(\d+)', chunk_str)
                         if match:
                             tracked_tokens = max(tracked_tokens, int(match.group(1)))
@@ -385,7 +412,10 @@ async def _proxy_gateway_request(
             from database import SessionLocal as DBSession
             db_session = DBSession()
             try:
-                log_api_usage(db_session, api_key.id, tracked_tokens, resp.status_code, resp.status_code >= 400, api_key_name=api_key.name)
+                error_message = None
+                if resp.status_code >= 400:
+                    error_message = f"Stream failed with status {resp.status_code}"
+                log_api_usage(db_session, api_key.id, tracked_tokens, resp.status_code, resp.status_code >= 400, api_key_name=api_key.name, error_message=error_message)
             finally:
                 db_session.close()
 
