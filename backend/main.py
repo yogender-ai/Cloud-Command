@@ -66,6 +66,10 @@ def _safe_migrate():
         "ALTER TABLE api_usage_logs    ADD COLUMN IF NOT EXISTS is_error BOOLEAN DEFAULT FALSE",
         # v2.2.0: per-key analytics tracking
         "ALTER TABLE api_usage_logs    ADD COLUMN IF NOT EXISTS api_key_name VARCHAR(255)",
+        # Quotas and Models
+        "ALTER TABLE api_keys          ADD COLUMN IF NOT EXISTS model_name VARCHAR(255)",
+        "ALTER TABLE api_keys          ADD COLUMN IF NOT EXISTS daily_request_limit INTEGER",
+        "ALTER TABLE api_keys          ADD COLUMN IF NOT EXISTS daily_token_limit INTEGER",
     ]
     with engine.connect() as conn:
         for sql in migrations:

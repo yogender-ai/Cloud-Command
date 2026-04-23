@@ -73,13 +73,29 @@ class ApiKeyCreate(BaseModel):
     name: str
     provider: str
     category: Optional[str] = None
+    model_name: Optional[str] = None
+    daily_request_limit: Optional[int] = None
+    daily_token_limit: Optional[int] = None
     key_value: str  # plaintext, will be encrypted server-side
+
+class ApiKeyUpdate(BaseModel):
+    name: Optional[str] = None
+    category: Optional[str] = None
+    model_name: Optional[str] = None
+    daily_request_limit: Optional[int] = None
+    daily_token_limit: Optional[int] = None
+    clear_category: bool = False
+    clear_model_name: bool = False
+    clear_limits: bool = False
 
 class ApiKeyResponse(BaseModel):
     id: int
     name: str
     provider: str
     category: Optional[str] = None
+    model_name: Optional[str] = None
+    daily_request_limit: Optional[int] = None
+    daily_token_limit: Optional[int] = None
     masked_key: str
     status: str
     last_checked: datetime

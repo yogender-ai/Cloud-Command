@@ -136,6 +136,9 @@ async def create_key(
         name=req.name,
         provider=req.provider.lower(),
         category=req.category,
+        model_name=req.model_name,
+        daily_request_limit=req.daily_request_limit,
+        daily_token_limit=req.daily_token_limit,
         encrypted_key=encrypt_value(req.key_value),
         masked_key=masked,
         status=status_str,
@@ -165,11 +168,11 @@ async def create_key(
 @router.patch("/{key_id}", response_model=schemas.ApiKeyResponse)
 def update_key(
     key_id: int,
-    req: schemas.MonitorUpdate,  # reuse: name + category + clear_category
+    req: schemas.ApiKeyUpdate,
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    """Update name and/or category of an existing API key."""
+    """Update properties of an existing API key."""
     key = (
         db.query(models.ApiKey)
         .filter(models.ApiKey.id == key_id, models.ApiKey.user_id == user.id)
@@ -177,12 +180,29 @@ def update_key(
     )
     if not key:
         raise HTTPException(status_code=404, detail="API key not found")
+    
     if req.name is not None:
         key.name = req.name
     if req.category is not None:
         key.category = req.category
     elif req.clear_category:
         key.category = None
+        
+    if req.model_name is not None:
+        key.model_name = req.model_name
+    elif req.clear_model_name:
+        key.model_name = None
+        
+    if req.daily_request_limit is not None:
+        key.daily_request_limit = req.daily_request_limit
+    elif req.clear_limits:
+        key.daily_request_limit = None
+        
+    if req.daily_token_limit is not None:
+        key.daily_token_limit = req.daily_token_limit
+    elif req.clear_limits:
+        key.daily_token_limit = None
+
     db.commit()
     db.refresh(key)
     key.tokens_used = (
@@ -444,15 +464,39 @@ def get_summary(
             models.ApiUsageLog.api_key_id == k.id,
             models.ApiUsageLog.is_error == True,
         ).count()
+        
+        # Today's stats
+        today_tokens = (
+            db.query(func.sum(models.ApiUsageLog.tokens_used))
+            .filter(
+                models.ApiUsageLog.api_key_id == k.id,
+                func.date(models.ApiUsageLog.timestamp) == today,
+            )
+            .scalar()
+        ) or 0
+        today_requests = (
+            db.query(models.ApiUsageLog)
+            .filter(
+                models.ApiUsageLog.api_key_id == k.id,
+                func.date(models.ApiUsageLog.timestamp) == today,
+            )
+            .count()
+        )
+
         per_key.append({
             "id": k.id,
             "name": k.name,
             "provider": k.provider,
             "category": k.category,
+            "model_name": k.model_name,
+            "daily_request_limit": k.daily_request_limit,
+            "daily_token_limit": k.daily_token_limit,
             "masked_key": k.masked_key,
             "total_tokens": k_tokens,
             "total_requests": k_requests,
             "failed_requests": k_errors,
+            "today_tokens": today_tokens,
+            "today_requests": today_requests,
         })
 
     # Get key groups

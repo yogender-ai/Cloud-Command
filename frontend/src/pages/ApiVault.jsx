@@ -175,12 +175,14 @@ export default function ApiVault() {
   
   // Modals
   const [showAdd, setShowAdd] = useState(false);
+  const [showEdit, setShowEdit] = useState(false);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [manageGroup, setManageGroup] = useState(null);
   const [groupAnalytics, setGroupAnalytics] = useState(null);
   
   // Forms
-  const [form, setForm] = useState({ name: '', provider: 'OpenAI', category: '', key_value: '' });
+  const [form, setForm] = useState({ name: '', provider: 'OpenAI', category: '', key_value: '', model_name: '', daily_request_limit: '', daily_token_limit: '' });
+  const [editForm, setEditForm] = useState({ id: null, name: '', provider: '', category: '', model_name: '', daily_request_limit: '', daily_token_limit: '' });
   const [groupForm, setGroupForm] = useState({ name: '', description: '', strategy: 'round-robin', member_ids: [] });
   const [adding, setAdding] = useState(false);
   
@@ -286,6 +288,18 @@ export default function ApiVault() {
   const attemptAction = (action) => {
     if (vaultUnlocked) {
       if (action === 'add') setShowAdd(true);
+      else if (action.type === 'edit') {
+         setEditForm({ 
+            id: action.key.id, 
+            name: action.key.name, 
+            provider: action.key.provider, 
+            category: action.key.category || '', 
+            model_name: action.key.model_name || '', 
+            daily_request_limit: action.key.daily_request_limit || '', 
+            daily_token_limit: action.key.daily_token_limit || '' 
+         });
+         setShowEdit(true);
+      }
       else if (action === 'create_group') setShowCreateGroup(true);
       else if (action.type === 'delete') executeDelete(action.id);
       else if (action.type === 'manage_group') setManageGroup(action.group);
@@ -298,13 +312,40 @@ export default function ApiVault() {
     e.preventDefault();
     setAdding(true);
     try {
-      await addApiKey(form);
+      await addApiKey({
+        ...form,
+        daily_request_limit: form.daily_request_limit ? parseInt(form.daily_request_limit) : null,
+        daily_token_limit: form.daily_token_limit ? parseInt(form.daily_token_limit) : null
+      });
       setShowAdd(false);
-      setForm({ name: '', provider: 'OpenAI', category: '', key_value: '' });
+      setForm({ name: '', provider: 'OpenAI', category: '', key_value: '', model_name: '', daily_request_limit: '', daily_token_limit: '' });
       loadVaultData();
       toast.success('API key added & validated');
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Failed to add key');
+    } finally { setAdding(false); }
+  };
+
+  const handleEdit = async (e) => {
+    e.preventDefault();
+    setAdding(true);
+    try {
+      const payload = {
+         name: editForm.name,
+         category: editForm.category || undefined,
+         clear_category: !editForm.category,
+         model_name: editForm.model_name || undefined,
+         clear_model_name: !editForm.model_name,
+         daily_request_limit: editForm.daily_request_limit ? parseInt(editForm.daily_request_limit) : undefined,
+         daily_token_limit: editForm.daily_token_limit ? parseInt(editForm.daily_token_limit) : undefined,
+         clear_limits: !editForm.daily_request_limit && !editForm.daily_token_limit
+      };
+      await updateApiKey(editForm.id, payload);
+      setShowEdit(false);
+      loadVaultData();
+      toast.success('API key updated successfully');
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to update key');
     } finally { setAdding(false); }
   };
 

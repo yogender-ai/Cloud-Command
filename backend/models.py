@@ -105,10 +105,13 @@ class ApiKey(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(255), nullable=False)  # User's nickname
     provider = Column(String(100), nullable=False)  # openai, anthropic, gemini, etc.
-    category = Column(String(100), nullable=True)  # e.g. AI, Dev Tools, Infrastructure
+    model_name = Column(String(255), nullable=True)  # e.g., gemini-1.5-pro
+    category = Column(String(100), nullable=True)  # e.g. AI, Dev Tools, Infrastructure (used as Label/Role)
     encrypted_key = Column(Text, nullable=False)  # Fernet-encrypted
     masked_key = Column(String(100), nullable=False)  # e.g. "sk-...1234"
     status = Column(String(100), default="Unknown")  # Active, Invalid, Suspended
+    daily_request_limit = Column(Integer, nullable=True) # Max requests per day
+    daily_token_limit = Column(Integer, nullable=True) # Max tokens per day
     last_checked = Column(DateTime(timezone=True), default=utcnow)
     created_at = Column(DateTime(timezone=True), default=utcnow)
 
