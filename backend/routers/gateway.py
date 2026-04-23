@@ -20,6 +20,65 @@ _HF_SPACE_ID_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
 router = APIRouter(prefix="/api/gateway", tags=["gateway"])
 
+# ---------------------------------------------------------------------------
+# Gradio Client Cache — Singleton per (space_id, token_hash) to prevent OOM.
+# Each GradioClient constructor downloads the full API schema and holds it
+# in memory.  Creating one per request quickly exhausts the 512 MB limit on
+# Render free-tier.  We keep at most _HF_CLIENT_MAX cached clients, each
+# for up to _HF_CLIENT_TTL seconds before being recycled.
+# ---------------------------------------------------------------------------
+import time as _time
+import hashlib as _hashlib
+import threading as _threading
+
+_hf_client_cache: dict[str, tuple[float, object]] = {}  # key → (created_ts, GradioClient)
+_hf_client_lock = _threading.Lock()
+_HF_CLIENT_TTL = 600    # 10 minutes
+_HF_CLIENT_MAX = 4      # max distinct space+token combos to cache
+
+
+def _get_or_create_gradio_client(space_id: str, hf_token: str):
+    """Return a cached GradioClient, creating one only if missing or expired."""
+    token_hash = _hashlib.sha256(hf_token.encode()).hexdigest()[:12]
+    cache_key = f"{space_id}::{token_hash}"
+
+    now = _time.time()
+
+    with _hf_client_lock:
+        entry = _hf_client_cache.get(cache_key)
+        if entry and (now - entry[0] < _HF_CLIENT_TTL):
+            return entry[1]
+
+        # Evict expired entries
+        expired = [k for k, (ts, _) in _hf_client_cache.items() if now - ts >= _HF_CLIENT_TTL]
+        for k in expired:
+            try:
+                _hf_client_cache[k][1].close()
+            except Exception:
+                pass
+            del _hf_client_cache[k]
+
+        # Evict oldest if at capacity
+        while len(_hf_client_cache) >= _HF_CLIENT_MAX:
+            oldest_key = min(_hf_client_cache, key=lambda k: _hf_client_cache[k][0])
+            try:
+                _hf_client_cache[oldest_key][1].close()
+            except Exception:
+                pass
+            del _hf_client_cache[oldest_key]
+
+    # Create OUTSIDE the lock to avoid blocking other requests
+    if "hf_token" in GradioClient.__init__.__code__.co_varnames:
+        client = GradioClient(space_id, hf_token=hf_token)
+    else:
+        client = GradioClient(space_id, token=hf_token)
+
+    with _hf_client_lock:
+        _hf_client_cache[cache_key] = (now, client)
+
+    return client
+
+
 _HF_TEXT_IN_KEYS = {"inputs", "input", "text", "prompt", "query"}
 _HF_TEXT_OUT_KEYS = {"generated_text", "summary_text", "text", "answer", "output", "translation_text"}
 
@@ -485,11 +544,7 @@ async def proxy_huggingface_space(
     api_name = f"/{endpoint.lstrip('/')}"
 
     def _call_space():
-        # Support both new and old gradio_client constructor param names.
-        if "hf_token" in GradioClient.__init__.__code__.co_varnames:
-            client = GradioClient(space_id, hf_token=plaintext_key)
-        else:
-            client = GradioClient(space_id, token=plaintext_key)
+        client = _get_or_create_gradio_client(space_id, plaintext_key)
         return client.predict(input_text, api_name=api_name)
 
     try:
