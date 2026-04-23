@@ -116,7 +116,10 @@ function CustomTooltip({ active, payload, label }) {
   );
 }
 
-function DetailModal({ apiKey, onClose }) {
+function DetailModal({ apiKey, pkData, onClose }) {
+  const reqLeft = pkData?.daily_request_limit ? Math.max(0, pkData.daily_request_limit - (pkData.today_requests || 0)) : null;
+  const tokLeft = pkData?.daily_token_limit ? Math.max(0, pkData.daily_token_limit - (pkData.today_tokens || 0)) : null;
+
   return (
     <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
       <motion.div className="modal-panel modal-panel-lg" initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }} onClick={e => e.stopPropagation()}>
@@ -126,21 +129,24 @@ function DetailModal({ apiKey, onClose }) {
               {apiKey.name}
               <StatusBadge status={apiKey.status} />
             </h2>
-            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>Provider: {apiKey.provider}</p>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
+              Provider: {apiKey.provider} 
+              {apiKey.model_name && <span style={{ marginLeft: 8, padding: '2px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.1)' }}>{apiKey.model_name}</span>}
+            </p>
           </div>
           <button className="btn btn-ghost btn-icon" onClick={onClose}><X size={18} /></button>
         </div>
         
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 24 }}>
           <div className="card" style={{ padding: '16px', textAlign: 'center' }}>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Provider Limits</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent-emerald)' }}>Unknown</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Standard Tier</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Requests Remaining</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--accent-emerald)' }}>{reqLeft !== null ? reqLeft : 'Unlimited'}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Today</div>
           </div>
           <div className="card" style={{ padding: '16px', textAlign: 'center' }}>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Tokens Used (Est.)</div>
-            <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--accent-purple)' }}>{(apiKey.tokens_used || 0).toLocaleString()}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>In current window</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Tokens Remaining</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--accent-purple)' }}>{tokLeft !== null ? tokLeft.toLocaleString() : 'Unlimited'}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Today</div>
           </div>
           <div className="card" style={{ padding: '16px', textAlign: 'center' }}>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Last Assessed</div>
@@ -883,7 +889,9 @@ export default function ApiVault() {
                                       }}>#{globalIdx + 1}</span>
                                       <div>
                                         <h3 style={{ fontSize: 16, fontWeight: 700 }}>{key.name}</h3>
-                                        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2 }}>{key.provider}</div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 2 }}>
+                                          {key.provider} {key.model_name && <span style={{ textTransform: 'none', background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: 4, marginLeft: 6 }}>{key.model_name}</span>}
+                                        </div>
                                       </div>
                                     </div>
                                     <StatusBadge status={key.status} />
@@ -905,15 +913,21 @@ export default function ApiVault() {
                                   </div>
                                   {/* Mini stats */}
                                   {pkData && (
-                                    <div style={{ display: 'flex', gap: 12, fontSize: 11 }}>
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: 11 }}>
                                       <span style={{ color: '#a855f7', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{pkData.total_tokens.toLocaleString()} tok</span>
                                       <span style={{ color: '#6366f1', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{pkData.total_requests} req</span>
                                       {pkData.failed_requests > 0 && <span style={{ color: '#f43f5e', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{pkData.failed_requests} err</span>}
+                                      {key.daily_request_limit && (
+                                        <span style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                                          {Math.max(0, key.daily_request_limit - pkData.today_requests)} left today
+                                        </span>
+                                      )}
                                     </div>
                                   )}
                                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 'auto' }}>
                                     <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>Checked: {new Date(key.last_checked).toLocaleString()}</div>
                                     <div style={{ display: 'flex', gap: 4 }}>
+                                      <button className="btn btn-ghost btn-icon" onClick={(e) => { e.stopPropagation(); attemptAction({ type: 'edit', key }); }} title="Edit"><Settings size={14} /></button>
                                       <button className="btn btn-ghost btn-icon" onClick={(e) => handleCheck(e, key.id)} title="Re-validate"><RefreshCw size={14} /></button>
                                       <button className="btn btn-ghost btn-icon" onClick={(e) => { e.stopPropagation(); attemptAction({ type: 'delete', id: key.id }); }} title="Delete">
                                         {sending && requireOtpFor?.id === key.id ? <div className="spinner" style={{width:14,height:14}}/> : <Trash2 size={14} color="var(--accent-rose)" />}
@@ -938,7 +952,7 @@ export default function ApiVault() {
       {/* ── Modals ── */}
       
       <AnimatePresence>
-        {selectedKey && <DetailModal apiKey={selectedKey} onClose={() => setSelectedKey(null)} />}
+        {selectedKey && <DetailModal apiKey={selectedKey} pkData={perKey.find(pk => pk.id === selectedKey.id)} onClose={() => setSelectedKey(null)} />}
       </AnimatePresence>
 
       <AnimatePresence>
@@ -988,11 +1002,25 @@ export default function ApiVault() {
                   </select>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Category <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                  <label className="form-label">Role / Label <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
                   <input className="form-input" placeholder="e.g. News-Intel" value={form.category} onChange={e => setForm({...form, category: e.target.value})} list="api-categories" />
                   <datalist id="api-categories">
                     {allCategories.map(cat => <option key={cat} value={cat} />)}
                   </datalist>
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Model Name <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                  <input className="form-input" placeholder="e.g. gemini-1.5-pro" value={form.model_name} onChange={e => setForm({...form, model_name: e.target.value})} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <div className="form-group">
+                    <label className="form-label">Daily Request Limit <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                    <input type="number" className="form-input" placeholder="e.g. 1500" value={form.daily_request_limit} onChange={e => setForm({...form, daily_request_limit: e.target.value})} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Daily Token Limit <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                    <input type="number" className="form-input" placeholder="e.g. 100000" value={form.daily_token_limit} onChange={e => setForm({...form, daily_token_limit: e.target.value})} />
+                  </div>
                 </div>
                 <div className="form-group">
                   <label className="form-label">API Key</label>
@@ -1000,6 +1028,46 @@ export default function ApiVault() {
                 </div>
                 <button type="submit" className="btn btn-primary" disabled={adding} style={{ marginTop: 8 }}>
                   {adding ? <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> : 'Validate & Save'}
+                </button>
+              </form>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showEdit && (
+          <motion.div className="modal-overlay" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowEdit(false)}>
+            <motion.div className="modal-panel" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} onClick={e => e.stopPropagation()}>
+              <div className="modal-header">
+                <h2 className="modal-title">Edit API Key</h2>
+                <button className="btn btn-ghost btn-icon" onClick={() => setShowEdit(false)}><X size={18} /></button>
+              </div>
+              <form onSubmit={handleEdit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div className="form-group">
+                  <label className="form-label">Key Name</label>
+                  <input required className="form-input" placeholder="My OpenAI Key" value={editForm.name} onChange={e => setEditForm({...editForm, name: e.target.value})} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Role / Label <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                  <input className="form-input" placeholder="e.g. News-Intel" value={editForm.category} onChange={e => setEditForm({...editForm, category: e.target.value})} list="api-categories" />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Model Name <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                  <input className="form-input" placeholder="e.g. gemini-1.5-pro" value={editForm.model_name} onChange={e => setEditForm({...editForm, model_name: e.target.value})} />
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <div className="form-group">
+                    <label className="form-label">Daily Request Limit <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                    <input type="number" className="form-input" placeholder="e.g. 1500" value={editForm.daily_request_limit} onChange={e => setEditForm({...editForm, daily_request_limit: e.target.value})} />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Daily Token Limit <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(optional)</span></label>
+                    <input type="number" className="form-input" placeholder="e.g. 100000" value={editForm.daily_token_limit} onChange={e => setEditForm({...editForm, daily_token_limit: e.target.value})} />
+                  </div>
+                </div>
+                <button type="submit" className="btn btn-primary" disabled={adding} style={{ marginTop: 8 }}>
+                  {adding ? <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> : 'Save Changes'}
                 </button>
               </form>
             </motion.div>
