@@ -70,6 +70,7 @@ class MonitorLogResponse(BaseModel):
 # API KEYS
 # ──────────────────────────────────────
 class ApiKeyCreate(BaseModel):
+    model_config = {"protected_namespaces": ()}
     name: str
     provider: str
     category: Optional[str] = None
@@ -79,6 +80,7 @@ class ApiKeyCreate(BaseModel):
     key_value: str  # plaintext, will be encrypted server-side
 
 class ApiKeyUpdate(BaseModel):
+    model_config = {"protected_namespaces": ()}
     name: Optional[str] = None
     category: Optional[str] = None
     model_name: Optional[str] = None
@@ -89,6 +91,7 @@ class ApiKeyUpdate(BaseModel):
     clear_limits: bool = False
 
 class ApiKeyResponse(BaseModel):
+    model_config = {"protected_namespaces": (), "from_attributes": True}
     id: int
     name: str
     provider: str
@@ -101,9 +104,6 @@ class ApiKeyResponse(BaseModel):
     last_checked: datetime
     created_at: datetime
     tokens_used: int = 0
-
-    class Config:
-        from_attributes = True
 
 class ApiKeyUsageResponse(BaseModel):
     id: int
