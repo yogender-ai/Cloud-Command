@@ -161,7 +161,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 24, alignItems: 'start' }}>
+      <div className="settings-layout" style={{ display: 'grid', gridTemplateColumns: '300px 1fr', gap: 24, alignItems: 'start' }}>
 
         {/* Left Column — Profile Card */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>

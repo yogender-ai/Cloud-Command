@@ -172,7 +172,7 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
+        <div className="monitor-detail-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 20 }}>
           {[
             { label: 'Status', value: monitor.status, color: isUp ? 'var(--accent-emerald)' : isAwakening ? 'var(--accent-amber)' : 'var(--accent-rose)' },
             { label: 'Avg Latency', value: `${avgLatency}ms`, color: 'var(--accent-indigo)' },
@@ -261,7 +261,7 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
                     {inspect.ssl === null && <span className="badge badge-neutral">HTTP only</span>}
                   </div>
                   {inspect.ssl?.valid !== null && inspect.ssl && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16 }}>
+                    <div className="inspect-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 16 }}>
                       <div><div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>ISSUER</div><div style={{ fontSize: 13, fontWeight: 600 }}>{inspect.ssl.issuer || '–'}</div></div>
                       <div><div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>EXPIRES</div><div style={{ fontSize: 13, fontWeight: 600 }}>{inspect.ssl.expires || '–'}</div></div>
                       <div><div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>DAYS LEFT</div>
@@ -283,7 +283,7 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {Object.entries(inspect.headers).map(([k, v]) => (
-                        <div key={k} style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
+                        <div key={k} className="header-row" style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: 12, padding: '8px 0', borderBottom: '1px solid var(--border)' }}>
                           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--accent-indigo)', fontWeight: 600 }}>{k}</div>
                           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--text-secondary)', wordBreak: 'break-all' }}>{v}</div>
                         </div>
@@ -512,7 +512,7 @@ export default function SiteMonitor() {
                 </div>
                 <div className="form-group">
                   <label className="form-label">Polling Interval</label>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
+                  <div className="interval-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
                     {[30, 60, 120, 300].map(v => (
                       <button key={v} type="button" onClick={() => setForm({...form, interval_seconds: v})}
                         className={`btn ${form.interval_seconds === v ? 'btn-primary' : 'btn-secondary'}`} style={{ justifyContent: 'center', fontSize: 12 }}>

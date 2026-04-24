@@ -33,6 +33,7 @@ export default function Sidebar() {
       {/* Mobile toggle */}
       <button
         className="mobile-menu-btn"
+        aria-label={mobileOpen ? 'Close navigation' : 'Open navigation'}
         onClick={() => setMobileOpen(!mobileOpen)}
       >
         {mobileOpen ? <X size={22} /> : <Menu size={22} />}
@@ -46,7 +47,7 @@ export default function Sidebar() {
               <text x="1" y="15" fontSize="14" fontWeight="900" fontFamily="monospace" fill="#fff">&gt;_</text>
             </svg>
           </div>
-          {!collapsed && (
+          {(!collapsed || mobileOpen) && (
             <div className="sidebar-brand-text">
               <h1>Cloud Command</h1>
               <p>DevOps Center</p>
@@ -66,7 +67,7 @@ export default function Sidebar() {
 
             return (
               <div key={item.to}>
-                {showSection && !collapsed && (
+                {showSection && (!collapsed || mobileOpen) && (
                   <div className="sidebar-section-label">{sections[item.section]}</div>
                 )}
                 <NavLink
@@ -75,7 +76,7 @@ export default function Sidebar() {
                   onClick={() => setMobileOpen(false)}
                 >
                   <span className="nav-item-icon"><Icon size={18} /></span>
-                  {!collapsed && <span>{item.label}</span>}
+                  {(!collapsed || mobileOpen) && <span>{item.label}</span>}
                 </NavLink>
               </div>
             );
@@ -87,7 +88,7 @@ export default function Sidebar() {
           <button className="sidebar-collapse-btn" style={{ flex: 1, marginRight: collapsed ? 0 : 8 }} onClick={() => setCollapsed(!collapsed)}>
             {collapsed ? <ChevronRight size={16} /> : <><ChevronLeft size={16} /> <span>Collapse</span></>}
           </button>
-          {!collapsed && <ThemeSwitcher />}
+          {(!collapsed || mobileOpen) && <ThemeSwitcher />}
         </div>
       </aside>
     </>
