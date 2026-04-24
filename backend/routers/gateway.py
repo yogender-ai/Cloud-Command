@@ -234,7 +234,7 @@ def _pick_from_group(db: Session, user_id: int, provider: str, category: str = N
             if m.is_enabled 
             and m.api_key 
             and m.api_key.provider == provider
-            and "active" in m.api_key.status.lower()
+            and _is_usable_key(m.api_key, provider)
         ]
         if category:
             cat_members = [m for m in enabled_members if m.api_key.category == category]
@@ -264,6 +264,14 @@ def _pick_from_group(db: Session, user_id: int, provider: str, category: str = N
     
     return None
 
+def _is_usable_key(api_key: models.ApiKey, provider: str) -> bool:
+    status = (api_key.status or "").lower()
+    if "active" in status:
+        return True
+    # Migration bridge: OpenRouter keys saved before validator support were
+    # marked Unknown Provider, which made the gateway skip otherwise valid keys.
+    return provider == "openrouter" and status in {"unknown", "unknown provider"}
+
 def get_active_key(db: Session, user_id: int, provider: str, category: str = None) -> models.ApiKey:
     # First try group-based selection
     key = _pick_from_group(db, user_id, provider, category)
@@ -274,21 +282,22 @@ def get_active_key(db: Session, user_id: int, provider: str, category: str = Non
     query = db.query(models.ApiKey).filter(
         models.ApiKey.user_id == user_id,
         models.ApiKey.provider == provider,
-        models.ApiKey.status.ilike("%active%")
     )
     if category:
         query = query.filter(models.ApiKey.category == category)
     
     import random
-    keys = query.all()
+    keys = [k for k in query.all() if _is_usable_key(k, provider)]
     key = random.choice(keys) if keys else None
     if not key and category:
         # Fallback to any active key for this provider
-        keys = db.query(models.ApiKey).filter(
+        keys = [
+            k for k in db.query(models.ApiKey).filter(
             models.ApiKey.user_id == user_id,
             models.ApiKey.provider == provider,
-            models.ApiKey.status.ilike("%active%")
-        ).all()
+            ).all()
+            if _is_usable_key(k, provider)
+        ]
         key = random.choice(keys) if keys else None
     return key
 
@@ -353,6 +362,10 @@ async def _proxy_gateway_request(
         # OpenAI, DeepSeek, Groq, Mistral, xAI, Cohere, HuggingFace, OpenRouter
         # all use standard Bearer token format natively.
         headers["Authorization"] = f"Bearer {plaintext_key}"
+
+    if provider == "openrouter":
+        headers.setdefault("HTTP-Referer", "https://news-intel.local")
+        headers.setdefault("X-Title", "News-Intel via Cloud Command")
 
     body = await request.body()
 

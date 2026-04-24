@@ -119,6 +119,21 @@ async def check_api_key_validity(provider: str, key: str) -> str:
                     return "Invalid"
                 return f"Error ({r.status_code})"
 
+            elif p == "openrouter":
+                r = await client.get(
+                    "https://openrouter.ai/api/v1/models",
+                    headers={"Authorization": f"Bearer {key}"},
+                )
+                if r.status_code == 200:
+                    return "Active"
+                elif r.status_code == 401:
+                    return "Invalid"
+                elif r.status_code == 402:
+                    return "Insufficient Credits"
+                elif r.status_code == 429:
+                    return "Rate Limited"
+                return f"Error ({r.status_code})"
+
             else:
                 return "Unknown Provider"
 
