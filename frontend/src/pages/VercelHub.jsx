@@ -7,7 +7,7 @@ import {
 import { toast } from 'sonner';
 import {
   getVercelAccounts, connectVercelAccount, disconnectVercelAccount, updateVercelAccount,
-  getVercelProjects, getVercelDeployments, redeployVercelProject, getVercelEnvVars
+  getVercelProjects, getVercelDeployments, getVercelDeploymentEvents, redeployVercelProject, getVercelEnvVars
 } from '../api';
 import { CategoryBadge, CategoryEditor } from '../components/CategoryEditor';
 
@@ -22,6 +22,7 @@ export default function VercelHub() {
   const [connecting, setConnecting] = useState(false);
   const [selectedProject, setSelectedProject] = useState(null);
   const [deployments, setDeployments] = useState([]);
+  const [deploymentEvents, setDeploymentEvents] = useState({});
   const [envVars, setEnvVars] = useState([]);
   const [showEnv, setShowEnv] = useState(false);
 
@@ -76,13 +77,32 @@ export default function VercelHub() {
   };
 
   const allCategories = [...new Set(accounts.map(a => a.category).filter(Boolean))];
+  const visibleProjects = filterCat === 'All'
+    ? projects
+    : projects.filter(p => p.category === filterCat || activeAcct?.category === filterCat);
 
   const openProjectDetail = async (proj) => {
     setSelectedProject(proj);
+    setDeploymentEvents({});
     try {
       const data = await getVercelDeployments(activeAcct.id, proj.id);
-      setDeployments(data?.deployments || data || []);
+      const list = data?.deployments || data || [];
+      setDeployments(list);
+      const failed = list.find(d => (d.state || d.readyState) === 'ERROR');
+      if (failed?.uid) {
+        toast.error(`${proj.name} has a failed deployment. Logs are loading.`);
+        loadDeploymentEvents(failed.uid);
+      }
     } catch { setDeployments([]); }
+  };
+
+  const loadDeploymentEvents = async (deploymentId) => {
+    try {
+      const data = await getVercelDeploymentEvents(activeAcct.id, deploymentId);
+      setDeploymentEvents(prev => ({ ...prev, [deploymentId]: data?.events || data || [] }));
+    } catch {
+      toast.error('Failed to load deployment logs');
+    }
   };
 
   const loadEnvVars = async (projectId) => {
@@ -163,7 +183,7 @@ export default function VercelHub() {
             <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>No projects found for this account</div>
           ) : (
             <div className="grid grid-3">
-              {projects.map((proj, i) => (
+              {visibleProjects.map((proj, i) => (
                 <motion.div key={proj.id || i} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.05 }}
                   className="card card-interactive service-card" onClick={() => openProjectDetail(proj)}>
                   <div className="service-card-header">
@@ -187,7 +207,7 @@ export default function VercelHub() {
                   <div className="service-actions">
                     <button className="btn btn-secondary btn-sm" onClick={(e) => {
                       e.stopPropagation();
-                      redeployVercelProject(activeAcct.id, proj.id).then(() => toast.success('Redeployment triggered')).catch(() => toast.error('Redeploy failed'));
+                      redeployVercelProject(activeAcct.id, proj.id).then(() => toast.success('Redeployment triggered')).catch((err) => toast.error(err.response?.data?.detail || 'Redeploy failed'));
                     }}>
                       <Rocket size={12} /> Redeploy
                     </button>
@@ -224,19 +244,31 @@ export default function VercelHub() {
               <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Recent Deployments</h3>
               <div className="table-wrapper">
                 <table className="table">
-                  <thead><tr><th>URL</th><th>State</th><th>Created</th><th>Source</th></tr></thead>
+                  <thead><tr><th>URL</th><th>State</th><th>Commit</th><th>Created</th><th>Logs</th></tr></thead>
                   <tbody>
-                    {deployments.slice(0, 15).map((d, i) => (
-                      <tr key={d.uid || i}>
-                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
-                          {d.url ? <a href={`https://${d.url}`} target="_blank" rel="noreferrer">{d.url.slice(0, 40)}...</a> : '-'}
-                        </td>
-                        <td><span className={`badge ${getDeployStatus(d.state || d.readyState)}`}>{d.state || d.readyState || 'unknown'}</span></td>
-                        <td style={{ fontSize: 12 }}>{d.created ? new Date(d.created).toLocaleString() : '-'}</td>
-                        <td style={{ fontSize: 12 }}>{d.meta?.githubCommitMessage?.slice(0, 40) || '-'}</td>
-                      </tr>
-                    ))}
-                    {deployments.length === 0 && <tr><td colSpan="4" style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>No deployments found</td></tr>}
+                    {deployments.slice(0, 15).map((d, i) => {
+                      const commitSha = d.meta?.githubCommitSha || d.meta?.githubCommitRef || '';
+                      const events = deploymentEvents[d.uid] || [];
+                      const lastError = events.find(e => e.type === 'stderr' || e.level === 'error' || e.payload?.text)?.payload?.text;
+                      return (
+                        <tr key={d.uid || i}>
+                          <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>
+                            {d.url ? <a href={`https://${d.url}`} target="_blank" rel="noreferrer">{d.url.slice(0, 40)}...</a> : '-'}
+                          </td>
+                          <td><span className={`badge ${getDeployStatus(d.state || d.readyState)}`}>{d.state || d.readyState || 'unknown'}</span></td>
+                          <td style={{ fontSize: 12, maxWidth: 280 }}>
+                            {commitSha ? <span style={{ fontFamily: 'var(--font-mono)' }}>{commitSha.slice(0, 7)}</span> : '-'}
+                            {d.meta?.githubCommitMessage && <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>{d.meta.githubCommitMessage.slice(0, 52)}</div>}
+                          </td>
+                          <td style={{ fontSize: 12 }}>{d.created ? new Date(d.created).toLocaleString() : '-'}</td>
+                          <td style={{ fontSize: 12 }}>
+                            {d.uid ? <button className="btn btn-secondary btn-sm" onClick={() => loadDeploymentEvents(d.uid)}>Logs</button> : '-'}
+                            {lastError && <div style={{ color: 'var(--accent-rose)', marginTop: 6, maxWidth: 320 }}>{lastError.slice(0, 120)}</div>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {deployments.length === 0 && <tr><td colSpan="5" style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>No deployments found</td></tr>}
                   </tbody>
                 </table>
               </div>

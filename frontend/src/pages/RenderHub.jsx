@@ -77,13 +77,29 @@ export default function RenderHub() {
   };
 
   const allCategories = [...new Set(accounts.map(a => a.category).filter(Boolean))];
+  const visibleServices = filterCat === 'All'
+    ? services
+    : services.filter(s => (s.service || s).category === filterCat || activeAcct?.category === filterCat);
+
+  const deployCommit = (dep) => {
+    const commit = dep.commit || dep.gitCommit || dep.commitInfo || {};
+    return commit.id || commit.sha || dep.commitId || dep.gitCommitId || dep.commit?.hash || '';
+  };
+
+  const deployMessage = (dep) => {
+    const commit = dep.commit || dep.gitCommit || dep.commitInfo || {};
+    return commit.message || dep.commitMessage || dep.gitCommitMessage || '';
+  };
 
   const openServiceDetail = async (svc) => {
     const svcData = svc.service || svc;
     setSelectedService(svcData);
     try {
       const d = await getRenderDeploys(activeAcct.id, svcData.id);
-      setDeploys(Array.isArray(d) ? d : d?.map?.(x => x.deploy || x) || []);
+      const list = Array.isArray(d) ? d : d?.map?.(x => x.deploy || x) || [];
+      setDeploys(list);
+      const failed = list.find(dep => (dep.deploy || dep).status === 'build_failed');
+      if (failed) toast.error(`${svcData.name} has a failed deploy. Open details for logs.`);
     } catch { setDeploys([]); }
   };
 
@@ -158,7 +174,7 @@ export default function RenderHub() {
             <div className="card" style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>No services found for this account</div>
           ) : (
             <div className="grid grid-3">
-              {services.map((s, i) => {
+              {visibleServices.map((s, i) => {
                 const svc = s.service || s;
                 const isLive = svc.suspended !== 'suspended';
                 return (
@@ -178,7 +194,7 @@ export default function RenderHub() {
                       <div className="service-url">{svc.serviceDetails.url}</div>
                     )}
                     <div className="service-actions">
-                      <button className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); triggerRenderDeploy(activeAcct.id, svc.id).then(() => toast.success('Deploy triggered')).catch(() => toast.error('Deploy failed')); }}>
+                      <button className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); triggerRenderDeploy(activeAcct.id, svc.id).then(() => toast.success('Deploy triggered')).catch((err) => toast.error(err.response?.data?.detail || 'Deploy failed')); }}>
                         <Rocket size={12} /> Deploy
                       </button>
                       <button className="btn btn-secondary btn-sm" onClick={(e) => {
@@ -223,19 +239,29 @@ export default function RenderHub() {
               <h3 style={{ fontSize: 14, fontWeight: 700, marginBottom: 12 }}>Recent Deploys</h3>
               <div className="table-wrapper">
                 <table className="table">
-                  <thead><tr><th>Deploy ID</th><th>Status</th><th>Created</th></tr></thead>
+                  <thead><tr><th>Deploy ID</th><th>Status</th><th>Commit</th><th>Created</th><th>Logs</th></tr></thead>
                   <tbody>
                     {deploys.slice(0, 15).map((d, i) => {
                       const dep = d.deploy || d;
+                      const commit = deployCommit(dep);
+                      const message = deployMessage(dep);
+                      const logUrl = dep.logsUrl || dep.logUrl || dep.deployLogUrl || dep.dashboardUrl;
                       return (
                         <tr key={dep.id || i}>
                           <td style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{(dep.id || '').slice(0, 12)}...</td>
                           <td><span className={`badge ${dep.status === 'live' ? 'badge-up' : dep.status === 'build_failed' ? 'badge-down' : 'badge-neutral'}`}>{dep.status}</span></td>
+                          <td style={{ fontSize: 12, maxWidth: 260 }}>
+                            {commit ? <span style={{ fontFamily: 'var(--font-mono)' }}>{commit.slice(0, 7)}</span> : '-'}
+                            {message && <div style={{ color: 'var(--text-muted)', marginTop: 2 }}>{message.slice(0, 48)}</div>}
+                          </td>
                           <td style={{ fontSize: 12 }}>{dep.createdAt ? new Date(dep.createdAt).toLocaleString() : '-'}</td>
+                          <td style={{ fontSize: 12 }}>
+                            {logUrl ? <a href={logUrl} target="_blank" rel="noreferrer">Open logs</a> : dep.status === 'build_failed' ? 'Check Render logs' : '-'}
+                          </td>
                         </tr>
                       );
                     })}
-                    {deploys.length === 0 && <tr><td colSpan="3" style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>No deploys found</td></tr>}
+                    {deploys.length === 0 && <tr><td colSpan="5" style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>No deploys found</td></tr>}
                   </tbody>
                 </table>
               </div>
