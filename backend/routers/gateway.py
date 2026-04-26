@@ -163,6 +163,71 @@ def _safe_json_loads(data: bytes) -> object | None:
             return None
 
 
+def _gemini_model_from_payload(payload: object, default: str) -> str:
+    if not isinstance(payload, dict):
+        return default
+    model_name = str(payload.get("model") or default)
+    if model_name.startswith("models/"):
+        model_name = model_name[len("models/"):]
+    return model_name
+
+
+def _gemini_text_part(value) -> dict:
+    if isinstance(value, list):
+        text = "\n".join(str(item.get("text", item)) if isinstance(item, dict) else str(item) for item in value)
+    elif isinstance(value, dict):
+        text = str(value.get("text") or value.get("content") or json.dumps(value))
+    else:
+        text = str(value or "")
+    return {"text": text}
+
+
+def _normalize_gemini_body(body: bytes, *, embedding: bool) -> tuple[bytes, str | None]:
+    payload = _safe_json_loads(body) if body else None
+    if not isinstance(payload, dict):
+        return body, None
+
+    model_name = _gemini_model_from_payload(
+        payload,
+        "text-embedding-004" if embedding else "gemini-2.5-flash-lite",
+    )
+    outbound = dict(payload)
+    outbound.pop("model", None)
+
+    if embedding:
+        if "content" not in outbound and "contents" in outbound:
+            contents = outbound.pop("contents")
+            if isinstance(contents, list) and contents:
+                outbound["content"] = contents[0]
+            else:
+                outbound["content"] = {"parts": [_gemini_text_part(contents)]}
+        elif "content" not in outbound and "messages" in outbound:
+            messages = outbound.pop("messages")
+            text = "\n".join(
+                str(message.get("content", "")) for message in messages if isinstance(message, dict)
+            )
+            outbound["content"] = {"parts": [{"text": text}]}
+        return json.dumps(outbound).encode("utf-8"), model_name
+
+    if "contents" not in outbound and "messages" in outbound:
+        messages = outbound.pop("messages")
+        contents = []
+        for message in messages if isinstance(messages, list) else []:
+            if not isinstance(message, dict):
+                continue
+            role = "model" if message.get("role") == "assistant" else "user"
+            contents.append({"role": role, "parts": [_gemini_text_part(message.get("content"))]})
+        outbound["contents"] = contents or [{"role": "user", "parts": [{"text": ""}]}]
+    elif "contents" not in outbound and "content" in outbound:
+        content = outbound.pop("content")
+        if isinstance(content, dict) and isinstance(content.get("parts"), list):
+            outbound["contents"] = [{"role": "user", "parts": content["parts"]}]
+        else:
+            outbound["contents"] = [{"role": "user", "parts": [_gemini_text_part(content)]}]
+
+    return json.dumps(outbound).encode("utf-8"), model_name
+
+
 def _estimate_huggingface_tokens(request_body: bytes, response_body: bytes) -> int:
     req_json = _safe_json_loads(request_body) if request_body else None
     res_json = _safe_json_loads(response_body) if response_body else None
@@ -378,22 +443,20 @@ async def _proxy_gateway_request(
     # JSON body, e.g. {"model": "gemini-2.5-flash", "contents": [...]}.
     if provider == "gemini":
         _GEMINI_DEFAULT_MODEL = "gemini-2.5-flash-lite"
+        _is_embedding_request = (
+            "embedContent" in path
+            or path.strip("/").lower() in {"embeddings", "embedding", "embed"}
+        )
+        body, body_model = _normalize_gemini_body(body, embedding=_is_embedding_request)
         _needs_auto_route = (
             not path
             or not any(seg in path for seg in ("models/", ":generateContent", ":streamGenerateContent"))
         )
-        if _needs_auto_route:
-            model_name = _GEMINI_DEFAULT_MODEL
-            if body:
-                try:
-                    body_json = json.loads(body)
-                    if isinstance(body_json, dict) and body_json.get("model"):
-                        model_name = body_json["model"]
-                        if model_name.startswith("models/"):
-                            model_name = model_name[len("models/"):]
-                except Exception:
-                    pass
-            action = "streamGenerateContent" if request.headers.get("accept", "").startswith("text/event-stream") else "generateContent"
+        if _needs_auto_route or _is_embedding_request:
+            model_name = body_model or _GEMINI_DEFAULT_MODEL
+            action = "embedContent" if _is_embedding_request else (
+                "streamGenerateContent" if request.headers.get("accept", "").startswith("text/event-stream") else "generateContent"
+            )
             target_url = f"{base_url}/v1beta/models/{model_name}:{action}"
         else:
             # Caller provided a full path — ensure it uses v1beta not deprecated v1
