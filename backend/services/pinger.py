@@ -203,9 +203,11 @@ async def start_pinger():
     print("🔄 Pinger engine started")
     while True:
         try:
-            await ping_all_monitors()
+            await asyncio.wait_for(ping_all_monitors(), timeout=25)
             from services.scheduler import run_due_scheduled_jobs
-            await run_due_scheduled_jobs()
+            await asyncio.wait_for(run_due_scheduled_jobs(), timeout=25)
+        except asyncio.TimeoutError:
+            print("Pinger cycle timed out; skipping this tick")
         except Exception as e:
             print(f"Pinger loop error: {e}")
         await asyncio.sleep(30)
