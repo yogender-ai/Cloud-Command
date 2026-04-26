@@ -189,7 +189,7 @@ def _normalize_gemini_body(body: bytes, *, embedding: bool) -> tuple[bytes, str 
 
     model_name = _gemini_model_from_payload(
         payload,
-        "text-embedding-004" if embedding else "gemini-2.5-flash-lite",
+        "gemini-embedding-001" if embedding else "gemini-2.5-flash-lite",
     )
     outbound = dict(payload)
     outbound.pop("model", None)
@@ -457,7 +457,9 @@ async def _proxy_gateway_request(
             action = "embedContent" if _is_embedding_request else (
                 "streamGenerateContent" if request.headers.get("accept", "").startswith("text/event-stream") else "generateContent"
             )
-            target_url = f"{base_url}/v1beta/models/{model_name}:{action}"
+            # Embedding models (gemini-embedding-001, text-embedding-004) use v1, not v1beta
+            api_version = "v1" if _is_embedding_request else "v1beta"
+            target_url = f"{base_url}/{api_version}/models/{model_name}:{action}"
         else:
             # Caller provided a full path — ensure it uses v1beta not deprecated v1
             if path.startswith("v1/"):

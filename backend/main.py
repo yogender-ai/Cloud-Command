@@ -30,25 +30,21 @@ async def run_pinger_background():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: create tables (with timeout so Render port-scan doesn't fail)
-    try:
-        await asyncio.wait_for(
-            asyncio.to_thread(Base.metadata.create_all, bind=engine),
-            timeout=30,
-        )
-        print("Database tables created/verified")
-    except asyncio.TimeoutError:
-        print("⚠️  DB create_all timed out (Neon cold start?) — will retry on first request")
-    except Exception as e:
-        print(f"⚠️  DB create_all failed: {e} — will retry on first request")
+    # Fire-and-forget DB init so the server binds to $PORT immediately.
+    # Neon free-tier cold starts can take 10-30 s; we don't want that to
+    # block uvicorn from opening the port (Render will kill us otherwise).
+    async def _init_db_background():
+        try:
+            await asyncio.to_thread(Base.metadata.create_all, bind=engine)
+            print("Database tables created/verified")
+        except Exception as e:
+            print(f"⚠️  DB create_all error: {e}")
+        try:
+            await asyncio.to_thread(_safe_migrate)
+        except Exception as e:
+            print(f"⚠️  Migrations error: {e}")
 
-    # Safe migrations with timeout
-    try:
-        await asyncio.wait_for(asyncio.to_thread(_safe_migrate), timeout=30)
-    except asyncio.TimeoutError:
-        print("⚠️  Migrations timed out — skipping")
-    except Exception as e:
-        print(f"⚠️  Migrations failed: {e} — skipping")
+    db_init_task = asyncio.create_task(_init_db_background())
 
     # Start background pinger
     pinger_task = asyncio.create_task(run_pinger_background())
@@ -57,6 +53,7 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     pinger_task.cancel()
+    db_init_task.cancel()
     try:
         await pinger_task
     except asyncio.CancelledError:
