@@ -91,7 +91,7 @@ async def run_scheduled_job(job_id: int) -> None:
         db.close()
 
 
-async def run_due_scheduled_jobs() -> None:
+def _claim_due_scheduled_jobs() -> list[int]:
     db: Session = SessionLocal()
     try:
         now = _utcnow()
@@ -109,12 +109,17 @@ async def run_due_scheduled_jobs() -> None:
             job.next_run_at = now + timedelta(seconds=max(60, job.interval_seconds or 900))
             job.status = "RUNNING"
         db.commit()
+        return job_ids
     except Exception as exc:
         db.rollback()
         print(f"Scheduler scan failed: {exc}")
-        return
+        return []
     finally:
         db.close()
+
+
+async def run_due_scheduled_jobs() -> None:
+    job_ids = await asyncio.to_thread(_claim_due_scheduled_jobs)
 
     if job_ids:
         await asyncio.gather(*(run_scheduled_job(job_id) for job_id in job_ids), return_exceptions=True)

@@ -24,6 +24,8 @@ from slowapi.errors import RateLimitExceeded
 
 async def run_pinger_background():
     """Start the background pinger task."""
+    # Give uvicorn time to finish startup and bind $PORT before any DB work.
+    await asyncio.sleep(15)
     from services.pinger import start_pinger
     await start_pinger()
 
@@ -33,16 +35,19 @@ async def lifespan(app: FastAPI):
     # Fire-and-forget DB init so the server binds to $PORT immediately.
     # Neon free-tier cold starts can take 10-30 s; we don't want that to
     # block uvicorn from opening the port (Render will kill us otherwise).
+    async def _run_db_step(label, fn, timeout):
+        try:
+            await asyncio.wait_for(asyncio.to_thread(fn), timeout=timeout)
+            print(f"{label} complete")
+        except asyncio.TimeoutError:
+            print(f"{label} timed out; startup will continue")
+        except Exception as e:
+            print(f"{label} failed; startup will continue: {e}")
+
     async def _init_db_background():
-        try:
-            await asyncio.to_thread(Base.metadata.create_all, bind=engine)
-            print("Database tables created/verified")
-        except Exception as e:
-            print(f"⚠️  DB create_all error: {e}")
-        try:
-            await asyncio.to_thread(_safe_migrate)
-        except Exception as e:
-            print(f"⚠️  Migrations error: {e}")
+        await asyncio.sleep(2)
+        await _run_db_step("Database create_all", lambda: Base.metadata.create_all(bind=engine), 25)
+        await _run_db_step("Safe migrations", _safe_migrate, 25)
 
     db_init_task = asyncio.create_task(_init_db_background())
 
@@ -56,6 +61,10 @@ async def lifespan(app: FastAPI):
     db_init_task.cancel()
     try:
         await pinger_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await db_init_task
     except asyncio.CancelledError:
         pass
 

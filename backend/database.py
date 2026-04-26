@@ -19,9 +19,11 @@ if "channel_binding" in db_url:
 connect_args = {}
 if db_url.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
-elif "neon.tech" in db_url or "sslmode" in db_url:
-    # Neon requires SSL
-    connect_args = {"sslmode": "require"}
+else:
+    # psycopg2 defaults can wait too long during Neon/Render cold starts.
+    connect_args = {"connect_timeout": 10}
+    if "neon.tech" in db_url or "sslmode" in db_url:
+        connect_args["sslmode"] = "require"
 
 engine = create_engine(
     db_url,
