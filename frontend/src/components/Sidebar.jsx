@@ -2,13 +2,14 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import {
   LayoutDashboard, Globe, KeyRound, Server, Triangle,
-  Settings, ChevronLeft, ChevronRight, Menu, X
+  Settings, ChevronLeft, ChevronRight, Menu, X, Timer
 } from 'lucide-react';
 import ThemeSwitcher from './ThemeSwitcher';
 
 const navItems = [
   { label: 'Overview', to: '/', icon: LayoutDashboard, section: 'command' },
   { label: 'Site Monitor', to: '/monitors', icon: Globe, section: 'command' },
+  { label: 'Scheduled Jobs', to: '/scheduled-jobs', icon: Timer, section: 'command' },
   { label: 'API Vault', to: '/api-keys', icon: KeyRound, section: 'command' },
   { label: 'Render', to: '/render', icon: Server, section: 'platforms' },
   { label: 'Vercel', to: '/vercel', icon: Triangle, section: 'platforms' },

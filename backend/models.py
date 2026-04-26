@@ -177,6 +177,51 @@ class MonitorVisit(Base):
     )
 
 
+# ────────────────────────────────────────
+# SCHEDULED HTTP JOBS
+# ────────────────────────────────────────
+class ScheduledJob(Base):
+    __tablename__ = "scheduled_jobs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(255), nullable=False)
+    category = Column(String(100), nullable=True)
+    url = Column(String(1000), nullable=False)
+    method = Column(String(10), default="POST")
+    interval_seconds = Column(Integer, default=900)
+    timeout_seconds = Column(Integer, default=60)
+    body_json = Column(Text, nullable=True)
+    header_name = Column(String(255), nullable=True)
+    encrypted_header_value = Column(Text, nullable=True)
+    is_enabled = Column(Boolean, default=True)
+    status = Column(String(50), default="PENDING")
+    last_run_at = Column(DateTime(timezone=True), nullable=True)
+    next_run_at = Column(DateTime(timezone=True), default=utcnow)
+    last_status_code = Column(Integer, nullable=True)
+    last_latency_ms = Column(Integer, nullable=True)
+    last_error = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    owner = relationship("User")
+    logs = relationship("ScheduledJobLog", back_populates="job", cascade="all, delete-orphan")
+
+
+class ScheduledJobLog(Base):
+    __tablename__ = "scheduled_job_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    job_id = Column(Integer, ForeignKey("scheduled_jobs.id", ondelete="CASCADE"), nullable=False)
+    status = Column(String(50), nullable=False)
+    status_code = Column(Integer, nullable=True)
+    latency_ms = Column(Integer, nullable=True)
+    error_message = Column(Text, nullable=True)
+    response_preview = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=utcnow)
+
+    job = relationship("ScheduledJob", back_populates="logs")
+
+
 # ──────────────────────────────────────
 # API KEY GROUPS (bundled key management)
 # ──────────────────────────────────────

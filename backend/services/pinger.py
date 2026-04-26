@@ -200,6 +200,8 @@ async def start_pinger():
     while True:
         try:
             await ping_all_monitors()
+            from services.scheduler import run_due_scheduled_jobs
+            await run_due_scheduled_jobs()
         except Exception as e:
             print(f"Pinger loop error: {e}")
         await asyncio.sleep(30)

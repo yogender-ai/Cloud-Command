@@ -66,6 +66,74 @@ class MonitorLogResponse(BaseModel):
         from_attributes = True
 
 
+# ────────────────────────────────────────
+# SCHEDULED JOBS
+# ────────────────────────────────────────
+class ScheduledJobCreate(BaseModel):
+    name: str
+    url: str
+    method: str = "POST"
+    category: Optional[str] = None
+    interval_seconds: int = 900
+    timeout_seconds: int = 60
+    body_json: Optional[str] = None
+    header_name: Optional[str] = None
+    header_value: Optional[str] = None
+    is_enabled: bool = True
+
+
+class ScheduledJobUpdate(BaseModel):
+    name: Optional[str] = None
+    url: Optional[str] = None
+    method: Optional[str] = None
+    category: Optional[str] = None
+    interval_seconds: Optional[int] = None
+    timeout_seconds: Optional[int] = None
+    body_json: Optional[str] = None
+    header_name: Optional[str] = None
+    header_value: Optional[str] = None
+    is_enabled: Optional[bool] = None
+    clear_header: bool = False
+    clear_category: bool = False
+
+
+class ScheduledJobResponse(BaseModel):
+    id: int
+    name: str
+    category: Optional[str] = None
+    url: str
+    method: str
+    interval_seconds: int
+    timeout_seconds: int
+    body_json: Optional[str] = None
+    header_name: Optional[str] = None
+    is_enabled: bool
+    status: str
+    last_run_at: Optional[datetime] = None
+    next_run_at: Optional[datetime] = None
+    last_status_code: Optional[int] = None
+    last_latency_ms: Optional[int] = None
+    last_error: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ScheduledJobLogResponse(BaseModel):
+    id: int
+    job_id: int
+    status: str
+    status_code: Optional[int] = None
+    latency_ms: Optional[int] = None
+    error_message: Optional[str] = None
+    response_preview: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # ──────────────────────────────────────
 # API KEYS
 # ──────────────────────────────────────

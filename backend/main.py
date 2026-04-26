@@ -87,8 +87,14 @@ def _safe_migrate():
             if not inspector.has_table("gateway_api_keys"):
                 print("Adding gateway_api_keys table...")
                 models.GatewayApiKey.__table__.create(engine)
+            if not inspector.has_table("scheduled_jobs"):
+                print("Adding scheduled_jobs table...")
+                models.ScheduledJob.__table__.create(engine)
+            if not inspector.has_table("scheduled_job_logs"):
+                print("Adding scheduled_job_logs table...")
+                models.ScheduledJobLog.__table__.create(engine)
         except Exception as e:
-            print(f"Migration error for gateway_api_keys: {e}")
+            print(f"Migration error for managed tables: {e}")
     print("Safe migrations applied")
 
 
@@ -135,6 +141,7 @@ from routers.settings import router as settings_router
 from routers.tracking import router as tracking_router
 from routers.gateway import router as gateway_router
 from routers.gateway_keys import router as gateway_keys_router
+from routers.scheduled_jobs import router as scheduled_jobs_router
 
 app.include_router(auth_router)
 app.include_router(monitors_router)
@@ -146,6 +153,7 @@ app.include_router(settings_router)
 app.include_router(tracking_router)
 app.include_router(gateway_router)
 app.include_router(gateway_keys_router)
+app.include_router(scheduled_jobs_router)
 
 
 # ── Utility Endpoints ──

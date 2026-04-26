@@ -48,6 +48,14 @@ export const inspectMonitor = (id) => api.get(`/monitors/${id}/inspect`).then(r 
 export const exportMonitorCSV = (id) =>
   api.get(`/monitors/${id}/logs/csv`, { responseType: 'blob' }).then(r => r.data);
 
+// ── Scheduled Jobs ──
+export const getScheduledJobs = () => api.get('/scheduled-jobs').then(r => r.data);
+export const createScheduledJob = (data) => api.post('/scheduled-jobs', data).then(r => r.data);
+export const updateScheduledJob = (id, data) => api.patch(`/scheduled-jobs/${id}`, data).then(r => r.data);
+export const deleteScheduledJob = (id) => api.delete(`/scheduled-jobs/${id}`);
+export const runScheduledJob = (id) => api.post(`/scheduled-jobs/${id}/run`).then(r => r.data);
+export const getScheduledJobLogs = (id) => api.get(`/scheduled-jobs/${id}/logs`).then(r => r.data);
+
 // ── API Keys ──
 export const getApiKeys = () => api.get('/apikeys').then(r => r.data);
 export const addApiKey = (data) => api.post('/apikeys', data).then(r => r.data);

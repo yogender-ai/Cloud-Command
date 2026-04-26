@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import SiteMonitor from './pages/SiteMonitor';
+import ScheduledJobs from './pages/ScheduledJobs';
 import ApiVault from './pages/ApiVault';
 import RenderHub from './pages/RenderHub';
 import VercelHub from './pages/VercelHub';
@@ -44,6 +45,7 @@ export default function App() {
         {/* Protected with sidebar layout */}
         <Route path="/" element={<ProtectedRoute><AppLayout><Dashboard /></AppLayout></ProtectedRoute>} />
         <Route path="/monitors" element={<ProtectedRoute><AppLayout><SiteMonitor /></AppLayout></ProtectedRoute>} />
+        <Route path="/scheduled-jobs" element={<ProtectedRoute><AppLayout><ScheduledJobs /></AppLayout></ProtectedRoute>} />
         <Route path="/api-keys" element={<ProtectedRoute><AppLayout><ApiVault /></AppLayout></ProtectedRoute>} />
         <Route path="/render" element={<ProtectedRoute><AppLayout><RenderHub /></AppLayout></ProtectedRoute>} />
         <Route path="/vercel" element={<ProtectedRoute><AppLayout><VercelHub /></AppLayout></ProtectedRoute>} />
