@@ -263,7 +263,7 @@ def _hash_key(key: str) -> str:
     import hashlib
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
-async def verify_gateway_auth(request: Request, db: Session = Depends(get_db)) -> int:
+def verify_gateway_auth(request: Request, db: Session = Depends(get_db)) -> int:
     auth_header = request.headers.get("Authorization")
     custom_header = request.headers.get("X-Gateway-Secret")
     

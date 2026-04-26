@@ -23,11 +23,52 @@ def _coerce_aware(dt):
 
 
 async def run_scheduled_job(job_id: int) -> None:
+    job_data = await asyncio.to_thread(_load_scheduled_job, job_id)
+    if not job_data:
+        return
+
+    started = _utcnow()
+    status = "SUCCESS"
+    status_code = None
+    response_preview = None
+    error = None
+
+    try:
+        async with httpx.AsyncClient(timeout=max(5, job_data["timeout_seconds"] or 60), follow_redirects=True) as client:
+            response = await client.request(
+                job_data["method"].upper(),
+                job_data["url"],
+                headers=job_data["headers"],
+                content=job_data["content"],
+            )
+        status_code = response.status_code
+        response_preview = response.text[:1000]
+        if response.status_code >= 400:
+            status = "FAILED"
+            error = response_preview[:500]
+    except Exception as exc:
+        status = "FAILED"
+        error = str(exc)[:500]
+
+    latency_ms = int((_utcnow() - started).total_seconds() * 1000)
+    await asyncio.to_thread(
+        _save_scheduled_job_result,
+        job_id,
+        status,
+        status_code,
+        latency_ms,
+        error,
+        response_preview,
+        job_data["interval_seconds"],
+    )
+
+
+def _load_scheduled_job(job_id: int) -> dict | None:
     db: Session = SessionLocal()
     try:
         job = db.query(models.ScheduledJob).filter(models.ScheduledJob.id == job_id).first()
         if not job:
-            return
+            return None
 
         headers = {"User-Agent": "CloudCommand-Scheduler/1.0"}
         if job.header_name and job.encrypted_header_value:
@@ -42,34 +83,39 @@ async def run_scheduled_job(job_id: int) -> None:
             except Exception:
                 content = job.body_json
 
-        started = _utcnow()
-        status = "SUCCESS"
-        status_code = None
-        response_preview = None
-        error = None
+        return {
+            "method": job.method,
+            "url": job.url,
+            "headers": headers,
+            "content": content,
+            "timeout_seconds": job.timeout_seconds,
+            "interval_seconds": job.interval_seconds,
+        }
+    except Exception as exc:
+        print(f"Scheduled job load failed: {exc}")
+        return None
+    finally:
+        db.close()
 
-        try:
-            async with httpx.AsyncClient(timeout=max(5, job.timeout_seconds or 60), follow_redirects=True) as client:
-                response = await client.request(
-                    job.method.upper(),
-                    job.url,
-                    headers=headers,
-                    content=content,
-                )
-            status_code = response.status_code
-            response_preview = response.text[:1000]
-            if response.status_code >= 400:
-                status = "FAILED"
-                error = response_preview[:500]
-        except Exception as exc:
-            status = "FAILED"
-            error = str(exc)[:500]
 
-        latency_ms = int((_utcnow() - started).total_seconds() * 1000)
+def _save_scheduled_job_result(
+    job_id: int,
+    status: str,
+    status_code: int | None,
+    latency_ms: int,
+    error: str | None,
+    response_preview: str | None,
+    interval_seconds: int | None,
+) -> None:
+    db: Session = SessionLocal()
+    try:
+        job = db.query(models.ScheduledJob).filter(models.ScheduledJob.id == job_id).first()
+        if not job:
+            return
         now = _utcnow()
         job.status = status
         job.last_run_at = now
-        job.next_run_at = now + timedelta(seconds=max(60, job.interval_seconds or 900))
+        job.next_run_at = now + timedelta(seconds=max(60, interval_seconds or 900))
         job.last_status_code = status_code
         job.last_latency_ms = latency_ms
         job.last_error = error
@@ -86,7 +132,7 @@ async def run_scheduled_job(job_id: int) -> None:
         db.commit()
     except Exception as exc:
         db.rollback()
-        print(f"Scheduled job failed: {exc}")
+        print(f"Scheduled job save failed: {exc}")
     finally:
         db.close()
 
@@ -122,4 +168,4 @@ async def run_due_scheduled_jobs() -> None:
     job_ids = await asyncio.to_thread(_claim_due_scheduled_jobs)
 
     if job_ids:
-        await asyncio.gather(*(run_scheduled_job(job_id) for job_id in job_ids), return_exceptions=True)
+        await asyncio.gather(*(run_scheduled_job(job_id) for job_id in job_ids[:3]), return_exceptions=True)
