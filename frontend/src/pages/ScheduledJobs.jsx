@@ -22,11 +22,37 @@ function formatAgo(dateStr) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
-const defaultBody = JSON.stringify({
+const emptyForm = {
+  name: '',
+  category: '',
+  url: '',
+  method: 'POST',
+  interval_seconds: 900,
+  timeout_seconds: 60,
+  header_name: '',
+  header_value: '',
+  body_json: '',
+  is_enabled: true,
+};
+
+const newsIntelBody = JSON.stringify({
   topics: ['ai', 'tech', 'markets'],
   regions: ['global'],
   max_articles: 60,
 }, null, 2);
+
+const newsIntelPreset = {
+  name: 'NewsIntel ingestion',
+  category: 'News-Intel',
+  url: 'https://newsintel-xvhe.onrender.com/api/admin/ingest-now',
+  method: 'POST',
+  interval_seconds: 900,
+  timeout_seconds: 90,
+  header_name: 'X-Ingest-Secret',
+  header_value: '',
+  body_json: newsIntelBody,
+  is_enabled: true,
+};
 
 export default function ScheduledJobs() {
   const [jobs, setJobs] = useState([]);
@@ -34,18 +60,7 @@ export default function ScheduledJobs() {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState({
-    name: 'NewsIntel ingestion',
-    category: 'News-Intel',
-    url: 'https://newsintel-xvhe.onrender.com/api/admin/ingest-now',
-    method: 'POST',
-    interval_seconds: 900,
-    timeout_seconds: 90,
-    header_name: 'X-Ingest-Secret',
-    header_value: '',
-    body_json: defaultBody,
-    is_enabled: true,
-  });
+  const [form, setForm] = useState(emptyForm);
 
   const load = async () => {
     try {
@@ -74,6 +89,15 @@ export default function ScheduledJobs() {
     setSaving(true);
     try {
       JSON.parse(form.body_json || '{}');
+      const duplicate = jobs.find((job) =>
+        job.url.trim().toLowerCase() === form.url.trim().toLowerCase()
+        && job.method === form.method
+        && job.is_enabled
+      );
+      if (duplicate && !confirm(`A matching enabled job already exists: ${duplicate.name}. Create another one?`)) {
+        setSaving(false);
+        return;
+      }
       await createScheduledJob(form);
       setShowAdd(false);
       toast.success('Scheduled job created');
@@ -83,6 +107,16 @@ export default function ScheduledJobs() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const openBlankJob = () => {
+    setForm(emptyForm);
+    setShowAdd(true);
+  };
+
+  const openNewsIntelPreset = () => {
+    setForm(newsIntelPreset);
+    setShowAdd(true);
   };
 
   const handleRun = async (job) => {
@@ -126,7 +160,8 @@ export default function ScheduledJobs() {
         </div>
         <div className="header-actions">
           <button className="btn btn-secondary" onClick={load}><RefreshCcw size={16} /> Refresh</button>
-          <button className="btn btn-primary" onClick={() => setShowAdd(true)}><Plus size={16} /> New Job</button>
+          <button className="btn btn-secondary" onClick={openNewsIntelPreset}><Activity size={16} /> NewsIntel Preset</button>
+          <button className="btn btn-primary" onClick={openBlankJob}><Plus size={16} /> New Job</button>
         </div>
       </div>
 
@@ -135,7 +170,10 @@ export default function ScheduledJobs() {
           <div className="empty-state-icon"><Clock size={28} color="var(--accent-indigo)" /></div>
           <h3>No scheduled jobs</h3>
           <p>Create a 15-minute NewsIntel ingestion trigger and Cloud Command will call it automatically.</p>
-          <button className="btn btn-primary" onClick={() => setShowAdd(true)}>Create NewsIntel Job</button>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+            <button className="btn btn-secondary" onClick={openNewsIntelPreset}>Use NewsIntel Preset</button>
+            <button className="btn btn-primary" onClick={openBlankJob}>Create Blank Job</button>
+          </div>
         </div>
       ) : (
         <div className="grid grid-2">
