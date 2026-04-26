@@ -8,7 +8,38 @@ export const API_URL = _raw
   ? (_raw.endsWith('/api') ? _raw : `${_raw}/api`)
   : '/api';
 
-const api = axios.create({ baseURL: API_URL });
+// Base URL without /api suffix for health checks
+const BASE_URL = _raw ? _raw.replace(/\/api$/, '') : '';
+
+const api = axios.create({ baseURL: API_URL, timeout: 45000 });
+
+// ── Backend wake-up system ──
+// Render free tier sleeps the backend after 15min of inactivity.
+// Cold start takes ~30s. We ping /api/keep-alive first and wait for
+// a response before sending real API requests.
+let _backendReady = null; // null = unknown, Promise = waking, true = ready
+
+export async function ensureBackendAwake() {
+  if (_backendReady === true) return;
+  if (_backendReady && typeof _backendReady.then === 'function') return _backendReady;
+
+  _backendReady = (async () => {
+    const url = `${BASE_URL || ''}/api/keep-alive`;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await axios.get(url, { timeout: 40000 });
+        _backendReady = true;
+        return;
+      } catch {
+        // Backend still waking up, wait a bit then retry
+        if (attempt < 2) await new Promise(r => setTimeout(r, 2000));
+      }
+    }
+    // Give up waiting but don't block — let requests try anyway
+    _backendReady = true;
+  })();
+  return _backendReady;
+}
 
 api.interceptors.request.use((config) => {
   const token = getToken();
@@ -18,12 +49,20 @@ api.interceptors.request.use((config) => {
 
 api.interceptors.response.use(
   (res) => res,
-  (err) => {
+  async (err) => {
     if (err.response?.status === 401) {
       removeToken();
       if (!['/login', '/register'].includes(window.location.pathname)) {
         window.location.assign('/login');
       }
+    }
+    // Auto-retry once on timeout/network error (cold start recovery)
+    const config = err.config;
+    if (!config._retried && (err.code === 'ECONNABORTED' || !err.response)) {
+      config._retried = true;
+      _backendReady = null; // force re-check
+      await ensureBackendAwake();
+      return api(config);
     }
     return Promise.reject(err);
   }

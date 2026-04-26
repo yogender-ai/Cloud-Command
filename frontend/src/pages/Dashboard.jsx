@@ -10,7 +10,7 @@ import {
   AreaChart, Area, ResponsiveContainer, XAxis, YAxis,
   Tooltip, CartesianGrid
 } from 'recharts';
-import { getMonitors, getApiKeySummary, getRenderAccounts, getVercelAccounts, recordVisit, getVisits } from '../api';
+import { getMonitors, getApiKeySummary, getRenderAccounts, getVercelAccounts, recordVisit, getVisits, ensureBackendAwake } from '../api';
 
 const cardVariants = {
   hidden: { opacity: 0, y: 20 },
@@ -79,25 +79,35 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    recordVisit();
-    Promise.all([
-      getMonitors().catch(() => []),
-      getApiKeySummary().catch(() => null),
-      getRenderAccounts().catch(() => []),
-      getVercelAccounts().catch(() => []),
-      getVisits().catch(() => []),
-    ]).then(([m, a, r, v, vis]) => {
-      setMonitors(m);
-      setApiSummary(a);
-      setRenderAccounts(r);
-      setVercelAccounts(v);
+    let cancelled = false;
+    (async () => {
+      // Wake backend first (handles Render cold start)
+      await ensureBackendAwake();
+      if (cancelled) return;
+      recordVisit();
+      // Use allSettled so partial failures don't block the whole dashboard
+      const results = await Promise.allSettled([
+        getMonitors(),
+        getApiKeySummary(),
+        getRenderAccounts(),
+        getVercelAccounts(),
+        getVisits(),
+      ]);
+      if (cancelled) return;
+      const val = (i, fallback) => results[i].status === 'fulfilled' ? results[i].value : fallback;
+      setMonitors(val(0, []));
+      setApiSummary(val(1, null));
+      setRenderAccounts(val(2, []));
+      setVercelAccounts(val(3, []));
+      const vis = val(4, []);
       const chartData = [...vis].reverse().map(d => ({
         date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
         visits: d.visits,
       }));
       setVisits(chartData);
       setLoading(false);
-    });
+    })();
+    return () => { cancelled = true; };
   }, []);
 
   const monitorsUp = monitors.filter(m => m.status === 'UP').length;

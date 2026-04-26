@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer, YAxis, Tooltip, XAxis, CartesianGrid, BarChart, Bar } from 'recharts';
 import { toast } from 'sonner';
-import { getMonitors, addMonitor, deleteMonitor, updateMonitor, getMonitorLogs, exportMonitorCSV, inspectMonitor, getMonitorAnalytics, API_URL } from '../api';
+import { getMonitors, addMonitor, deleteMonitor, updateMonitor, getMonitorLogs, exportMonitorCSV, inspectMonitor, getMonitorAnalytics, API_URL, ensureBackendAwake } from '../api';
 import { CategoryBadge, CategoryEditor, getCategoryColor } from '../components/CategoryEditor';
 
 function formatAgo(dateStr) {
@@ -378,7 +378,7 @@ export default function SiteMonitor() {
     }).catch(() => setLoading(false));
   };
 
-  useEffect(() => { load(); const i = setInterval(load, 30000); return () => clearInterval(i); }, []);  // 30s — reduced from 5s
+  useEffect(() => { ensureBackendAwake().then(load); const i = setInterval(load, 30000); return () => clearInterval(i); }, []);  // wake first, then poll 30s
 
   const handleAdd = async (e) => {
     e.preventDefault();

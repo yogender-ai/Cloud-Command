@@ -1,7 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, Globe, KeyRound, Server, Zap, Shield } from 'lucide-react';
-import { loginRequest } from '../api';
+import { loginRequest, ensureBackendAwake } from '../api';
 import { setToken } from '../auth';
 
 const features = [
@@ -56,16 +56,20 @@ export default function Login() {
     }));
   }, []);
 
+  // Pre-wake the backend while user types credentials
+  useEffect(() => { ensureBackendAwake(); }, []);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
+      await ensureBackendAwake();
       const data = await loginRequest(email, password);
       setToken(data.access_token);
       navigate('/', { replace: true });
     } catch (err) {
-      setError(err.response?.data?.detail || 'Login failed');
+      setError(err.response?.data?.detail || 'Login failed — backend may still be waking up. Try again.');
     } finally {
       setLoading(false);
     }
