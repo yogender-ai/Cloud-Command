@@ -100,12 +100,19 @@ def list_keys(db: Session = Depends(get_db), user: models.User = Depends(get_cur
         .order_by(models.ApiKey.created_at.desc())
         .all()
     )
+    if not keys:
+        return keys
+    key_ids = [k.id for k in keys]
+    # Single aggregate query instead of N separate queries
+    token_sums = db.query(
+        models.ApiUsageLog.api_key_id,
+        func.coalesce(func.sum(models.ApiUsageLog.tokens_used), 0),
+    ).filter(
+        models.ApiUsageLog.api_key_id.in_(key_ids),
+    ).group_by(models.ApiUsageLog.api_key_id).all()
+    token_map = {row[0]: int(row[1]) for row in token_sums}
     for k in keys:
-        k.tokens_used = (
-            db.query(func.sum(models.ApiUsageLog.tokens_used))
-            .filter(models.ApiUsageLog.api_key_id == k.id)
-            .scalar()
-        ) or 0
+        k.tokens_used = token_map.get(k.id, 0)
     return keys
 
 

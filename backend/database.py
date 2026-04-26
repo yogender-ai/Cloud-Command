@@ -23,6 +23,15 @@ elif "neon.tech" in db_url or "sslmode" in db_url:
     # Neon requires SSL
     connect_args = {"sslmode": "require"}
 
-engine = create_engine(db_url, connect_args=connect_args, pool_pre_ping=True, pool_size=5, max_overflow=10)
+engine = create_engine(
+    db_url,
+    connect_args=connect_args,
+    pool_pre_ping=False,      # Removed: adds ~100ms per request to Neon
+    pool_recycle=300,          # Recycle stale connections every 5 min instead
+    pool_size=3,               # Render free = 1 worker, keep pool small
+    max_overflow=2,            # Allow 2 burst connections max
+    pool_use_lifo=True,        # Reuse most recently returned (warm) connections
+    pool_timeout=10,           # Don't wait forever for a connection
+)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()

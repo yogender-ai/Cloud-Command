@@ -93,6 +93,7 @@ async def ping_url(client: httpx.AsyncClient, url: str) -> tuple[str, int]:
 
 async def ping_all_monitors():
     """Ping all monitors that are due for a check."""
+    # ── Phase 1: Read monitors from DB, then RELEASE the connection ──
     db: Session = SessionLocal()
     try:
         monitors = db.query(models.Monitor).filter(models.Monitor.user_id.isnot(None)).all()
@@ -101,11 +102,9 @@ async def ping_all_monitors():
 
         now = datetime.now(timezone.utc)
 
-        # Collect monitors that are due
         due = []
         for monitor in monitors:
             if monitor.last_checked:
-                # Use astimezone to safely convert naive or aware datetimes to UTC
                 last = monitor.last_checked
                 if last.tzinfo is None:
                     last = last.replace(tzinfo=timezone.utc)
@@ -114,71 +113,71 @@ async def ping_all_monitors():
                 elapsed = (now - last).total_seconds()
                 if elapsed < monitor.interval_seconds - 2:
                     continue
-            due.append(monitor)
+            due.append({"id": monitor.id, "url": monitor.url, "status": monitor.status,
+                        "user_id": monitor.user_id, "name": monitor.name})
 
         if not due:
             return
+    finally:
+        db.close()  # Release connection BEFORE network I/O
 
-        # Reuse one client for the whole cycle — avoids per-ping DNS resolution overhead
-        async with httpx.AsyncClient(
-            timeout=httpx.Timeout(connect=5.0, read=12.0, write=5.0, pool=2.0),
-            follow_redirects=True,
-            limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
-        ) as client:
-            # Ping concurrently
-            results = await asyncio.gather(
-                *[ping_url(client, m.url) for m in due],
-                return_exceptions=True,
-            )
+    # ── Phase 2: Ping URLs (no DB connection held) ──
+    async with httpx.AsyncClient(
+        timeout=httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=2.0),
+        follow_redirects=True,
+        limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
+    ) as client:
+        results = await asyncio.gather(
+            *[ping_url(client, m["url"]) for m in due],
+            return_exceptions=True,
+        )
 
-        for monitor, result in zip(due, results):
+    # ── Phase 3: Save results (brief DB session) ──
+    db = SessionLocal()
+    try:
+        for monitor_data, result in zip(due, results):
             if isinstance(result, Exception):
                 raw_status, latency = "DOWN", 0
             else:
                 raw_status, latency = result
 
-            monitor_id = monitor.id
+            monitor_id = monitor_data["id"]
 
-            # Consecutive failure guard: only flip to DOWN after N failures
             if raw_status == "DOWN":
                 _consecutive_failures[monitor_id] = _consecutive_failures.get(monitor_id, 0) + 1
                 if _consecutive_failures[monitor_id] < FAILURES_BEFORE_DOWN:
-                    status = monitor.status  # keep current
+                    status = monitor_data["status"]
                 else:
                     status = "DOWN"
             elif raw_status == "AWAKENING":
-                _consecutive_failures[monitor_id] = 0  # reset failure count while booting
+                _consecutive_failures[monitor_id] = 0
                 status = "AWAKENING"
             else:
-                _consecutive_failures[monitor_id] = 0  # reset on success
+                _consecutive_failures[monitor_id] = 0
                 status = "UP"
 
-            previous_status = monitor.status
+            previous_status = monitor_data["status"]
 
-            # Update monitor record
-            monitor.status = status
-            monitor.last_checked = now
-
-            # Log every ping (including intermediate failures)
-            log = models.MonitorLog(
-                monitor_id=monitor_id,
-                status=raw_status,  # log the raw result
-                latency=latency,
+            # Update monitor
+            db.query(models.Monitor).filter(models.Monitor.id == monitor_id).update(
+                {"status": status, "last_checked": now}
             )
-            db.add(log)
 
-            # Alert only on confirmed status changes
+            # Log the ping
+            db.add(models.MonitorLog(monitor_id=monitor_id, status=raw_status, latency=latency))
+
+            # Alert on confirmed status changes
             if previous_status != status:
                 try:
-                    owner = db.query(models.User).filter(models.User.id == monitor.user_id).first()
+                    owner = db.query(models.User).filter(models.User.id == monitor_data["user_id"]).first()
                     if owner:
                         alert_email = owner.notification_email or owner.email
                         if alert_email:
                             from services.mailer import send_status_change_email
                             send_status_change_email(
                                 to=alert_email,
-                                site_name=monitor.name,
-                                site_url=monitor.url,
+                                site_name=monitor_data["name"],
+                                site_url=monitor_data["url"],
                                 new_status=status,
                             )
                 except Exception as e:
