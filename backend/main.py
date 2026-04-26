@@ -30,13 +30,25 @@ async def run_pinger_background():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: create tables
-    Base.metadata.create_all(bind=engine)
-    print("Database tables created/verified")
+    # Startup: create tables (with timeout so Render port-scan doesn't fail)
+    try:
+        await asyncio.wait_for(
+            asyncio.to_thread(Base.metadata.create_all, bind=engine),
+            timeout=30,
+        )
+        print("Database tables created/verified")
+    except asyncio.TimeoutError:
+        print("⚠️  DB create_all timed out (Neon cold start?) — will retry on first request")
+    except Exception as e:
+        print(f"⚠️  DB create_all failed: {e} — will retry on first request")
 
-    # Safe migrations: add new nullable columns without losing existing data
-    # create_all() never alters existing tables, so we do it manually.
-    _safe_migrate()
+    # Safe migrations with timeout
+    try:
+        await asyncio.wait_for(asyncio.to_thread(_safe_migrate), timeout=30)
+    except asyncio.TimeoutError:
+        print("⚠️  Migrations timed out — skipping")
+    except Exception as e:
+        print(f"⚠️  Migrations failed: {e} — skipping")
 
     # Start background pinger
     pinger_task = asyncio.create_task(run_pinger_background())
