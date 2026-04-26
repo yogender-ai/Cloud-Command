@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import re
 import models
 from dependencies import get_db
+from database import SessionLocal as GatewaySessionLocal
 from security import decrypt_value
 
 try:
@@ -366,6 +367,38 @@ def get_active_key(db: Session, user_id: int, provider: str, category: str = Non
         key = random.choice(keys) if keys else None
     return key
 
+
+def _active_key_material(user_id: int, provider: str, category: str = None) -> dict | None:
+    db = GatewaySessionLocal()
+    try:
+        api_key = get_active_key(db, user_id, provider, category)
+        if not api_key:
+            return None
+        return {
+            "id": api_key.id,
+            "name": api_key.name,
+            "plaintext": decrypt_value(api_key.encrypted_key),
+        }
+    finally:
+        db.close()
+
+
+def _log_api_usage_safe(
+    api_key_id: int,
+    tokens_used: int,
+    status_code: int,
+    is_error: bool,
+    api_key_name: str = None,
+    error_message: str = None,
+) -> None:
+    db = GatewaySessionLocal()
+    try:
+        log_api_usage(db, api_key_id, tokens_used, status_code, is_error, api_key_name, error_message)
+    except Exception as exc:
+        print(f"Gateway usage log failed: {exc}")
+    finally:
+        db.close()
+
 def _filtered_forward_headers(request: Request) -> dict:
     # Strip hop-by-hop headers + gateway auth headers so we don't leak them upstream.
     blocked = {
@@ -389,11 +422,11 @@ async def _proxy_gateway_request(
     provider = provider.lower()
     
     category = request.headers.get("X-Project-Category")
-    api_key = get_active_key(db, user_id, provider, category)
-    if not api_key:
+    key_material = await asyncio.to_thread(_active_key_material, user_id, provider, category)
+    if not key_material:
         raise HTTPException(status_code=404, detail=f"No active API key found for provider: {provider}")
 
-    plaintext_key = decrypt_value(api_key.encrypted_key)
+    plaintext_key = key_material["plaintext"]
     
     headers = _filtered_forward_headers(request)
     query_params = dict(request.query_params)
@@ -521,7 +554,15 @@ async def _proxy_gateway_request(
             except Exception:
                 pass
             
-        background_tasks.add_task(log_api_usage, db, api_key.id, tracked_tokens, resp.status_code, resp.status_code >= 400, api_key_name=api_key.name, error_message=error_message)
+        background_tasks.add_task(
+            _log_api_usage_safe,
+            key_material["id"],
+            tracked_tokens,
+            resp.status_code,
+            resp.status_code >= 400,
+            key_material["name"],
+            error_message,
+        )
             
         filtered_headers = {k: v for k, v in resp.headers.items() if k.lower() not in ("content-length", "content-encoding")}
         return Response(content=resp_bytes, status_code=resp.status_code, headers=filtered_headers)
@@ -547,15 +588,18 @@ async def _proxy_gateway_request(
         finally:
             await client.aclose()
             
-            from database import SessionLocal as DBSession
-            db_session = DBSession()
-            try:
-                error_message = None
-                if resp.status_code >= 400:
-                    error_message = f"Stream failed with status {resp.status_code}"
-                log_api_usage(db_session, api_key.id, tracked_tokens, resp.status_code, resp.status_code >= 400, api_key_name=api_key.name, error_message=error_message)
-            finally:
-                db_session.close()
+            error_message = None
+            if resp.status_code >= 400:
+                error_message = f"Stream failed with status {resp.status_code}"
+            await asyncio.to_thread(
+                _log_api_usage_safe,
+                key_material["id"],
+                tracked_tokens,
+                resp.status_code,
+                resp.status_code >= 400,
+                key_material["name"],
+                error_message,
+            )
 
     resp_headers = {k: v for k, v in resp.headers.items() if k.lower() not in ("content-length", "content-encoding")}
     return StreamingResponse(stream_generator(), status_code=resp.status_code, headers=resp_headers)
@@ -602,11 +646,11 @@ async def proxy_huggingface_space(
         raise HTTPException(status_code=400, detail="Invalid space id format. Expected: <owner>/<space>.")
 
     category = request.headers.get("X-Project-Category")
-    api_key = get_active_key(db, user_id, "huggingface", category)
-    if not api_key:
+    key_material = await asyncio.to_thread(_active_key_material, user_id, "huggingface", category)
+    if not key_material:
         raise HTTPException(status_code=404, detail="No active API key found for provider: huggingface")
 
-    plaintext_key = decrypt_value(api_key.encrypted_key)
+    plaintext_key = key_material["plaintext"]
 
     try:
         payload = await request.json()
@@ -643,14 +687,13 @@ async def proxy_huggingface_space(
         error_message = str(result_raw)
 
     background_tasks.add_task(
-        log_api_usage,
-        db,
-        api_key.id,
+        _log_api_usage_safe,
+        key_material["id"],
         estimated_tokens,
         200 if not error_message else 500,
         bool(error_message),
-        api_key_name=api_key.name,
-        error_message=error_message
+        key_material["name"],
+        error_message,
     )
 
     if isinstance(result_raw, (dict, list)):
