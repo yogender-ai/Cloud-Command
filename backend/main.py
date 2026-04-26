@@ -30,6 +30,24 @@ async def run_pinger_background():
     await start_pinger()
 
 
+async def run_self_ping_background():
+    """Keep the Render service warm while it is already running."""
+    if not settings.RENDER_EXTERNAL_URL:
+        return
+
+    import httpx
+
+    await asyncio.sleep(60)
+    while True:
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                resp = await client.get(f"{settings.RENDER_EXTERNAL_URL}/api/keep-alive")
+                print(f"Self-ping: {resp.status_code}")
+        except Exception as e:
+            print(f"Self-ping error: {e}")
+        await asyncio.sleep(600)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Fire-and-forget DB init so the server binds to $PORT immediately.
@@ -53,18 +71,24 @@ async def lifespan(app: FastAPI):
 
     # Start background pinger
     pinger_task = asyncio.create_task(run_pinger_background())
+    self_ping_task = asyncio.create_task(run_self_ping_background())
 
     yield
 
     # Shutdown
     pinger_task.cancel()
     db_init_task.cancel()
+    self_ping_task.cancel()
     try:
         await pinger_task
     except asyncio.CancelledError:
         pass
     try:
         await db_init_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await self_ping_task
     except asyncio.CancelledError:
         pass
 
@@ -230,22 +254,3 @@ def get_visits():
     finally:
         db.close()
 
-
-# ── Self-Ping (prevent Render free tier sleep) ──
-
-if settings.RENDER_EXTERNAL_URL:
-    import httpx
-
-    async def self_ping():
-        while True:
-            try:
-                async with httpx.AsyncClient() as client:
-                    resp = await client.get(f"{settings.RENDER_EXTERNAL_URL}/api/keep-alive")
-                    print(f"🏓 Self-ping: {resp.status_code}")
-            except Exception as e:
-                print(f"🏓 Self-ping error: {e}")
-            await asyncio.sleep(600)  # 10 minutes
-
-    @app.on_event("startup")
-    async def start_self_ping():
-        asyncio.create_task(self_ping())
