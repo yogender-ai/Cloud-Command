@@ -284,7 +284,7 @@ def get_summary(
     db: Session = Depends(get_db),
     user: models.User = Depends(get_current_user),
 ):
-    """Get API key usage summary with flexible time ranges."""
+    """Get API key usage summary — optimized with SQL-level aggregation."""
     keys = db.query(models.ApiKey).filter(models.ApiKey.user_id == user.id).all()
     key_ids = [k.id for k in keys]
     key_name_map = {k.id: k.name for k in keys}
@@ -295,303 +295,192 @@ def get_summary(
     now = datetime.now()
     today = now.date()
 
-    tokens_today = (
-        db.query(func.sum(models.ApiUsageLog.tokens_used))
-        .filter(
-            models.ApiUsageLog.api_key_id.in_(key_ids),
-            func.date(models.ApiUsageLog.timestamp) == today,
-        )
-        .scalar()
-    ) or 0
+    if not key_ids:
+        return {
+            "total_keys": total, "active_keys": active,
+            "tokens_today": 0, "requests_today": 0, "errors_today": 0,
+            "usage_history": [], "per_key": [],
+            "key_groups": [], "recent_errors": [],
+        }
 
-    requests_today = (
-        db.query(models.ApiUsageLog)
-        .filter(
-            models.ApiUsageLog.api_key_id.in_(key_ids),
-            func.date(models.ApiUsageLog.timestamp) == today,
-        )
-        .count()
-    )
+    # ── Today's totals (single aggregate query) ──
+    today_agg = db.query(
+        func.coalesce(func.sum(models.ApiUsageLog.tokens_used), 0),
+        func.count(models.ApiUsageLog.id),
+        func.sum(case((models.ApiUsageLog.is_error == True, 1), else_=0)),
+    ).filter(
+        models.ApiUsageLog.api_key_id.in_(key_ids),
+        func.date(models.ApiUsageLog.timestamp) == today,
+    ).first()
+    tokens_today = int(today_agg[0])
+    requests_today = int(today_agg[1])
+    errors_today = int(today_agg[2])
 
-    errors_today = (
-        db.query(models.ApiUsageLog)
-        .filter(
-            models.ApiUsageLog.api_key_id.in_(key_ids),
-            func.date(models.ApiUsageLog.timestamp) == today,
-            models.ApiUsageLog.is_error == True,
-        )
-        .count()
-    )
-
-    # Build history based on time_range
-    history = []
-
-    if time_range == "1h":
-        for i in range(59, -1, -1):
-            minute_start = now - timedelta(minutes=i+1)
-            minute_end = now - timedelta(minutes=i)
-            logs = db.query(models.ApiUsageLog).filter(
-                models.ApiUsageLog.api_key_id.in_(key_ids),
-                models.ApiUsageLog.timestamp >= minute_start,
-                models.ApiUsageLog.timestamp < minute_end,
-            ).all()
-            per_key_tokens = {k.name: 0 for k in keys}
-            per_key_requests = {k.name: 0 for k in keys}
-            per_key_errors = {k.name: 0 for k in keys}
-            for l in logs:
-                name = key_name_map.get(l.api_key_id)
-                if not name:
-                    continue
-                per_key_tokens[name] = per_key_tokens.get(name, 0) + (l.tokens_used or 0)
-                per_key_requests[name] = per_key_requests.get(name, 0) + 1
-                if l.is_error:
-                    per_key_errors[name] = per_key_errors.get(name, 0) + 1
-            t = sum(per_key_tokens.values())
-            r = len(logs)
-            f = sum(per_key_errors.values())
-            history.append({
-                "date": minute_end.strftime("%H:%M"),
-                "total_tokens": t,
-                "total_requests": r,
-                "failed_requests": f,
-                "per_key_tokens": per_key_tokens,
-                "per_key_requests": per_key_requests,
-                "per_key_errors": per_key_errors,
-            })
-    elif time_range == "1d":
-        for i in range(23, -1, -1):
-            hour_start = now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=i)
-            hour_end = hour_start + timedelta(hours=1)
-            logs = db.query(models.ApiUsageLog).filter(
-                models.ApiUsageLog.api_key_id.in_(key_ids),
-                models.ApiUsageLog.timestamp >= hour_start,
-                models.ApiUsageLog.timestamp < hour_end,
-            ).all()
-            per_key_tokens = {k.name: 0 for k in keys}
-            per_key_requests = {k.name: 0 for k in keys}
-            per_key_errors = {k.name: 0 for k in keys}
-            for l in logs:
-                name = key_name_map.get(l.api_key_id)
-                if not name:
-                    continue
-                per_key_tokens[name] = per_key_tokens.get(name, 0) + (l.tokens_used or 0)
-                per_key_requests[name] = per_key_requests.get(name, 0) + 1
-                if l.is_error:
-                    per_key_errors[name] = per_key_errors.get(name, 0) + 1
-            t = sum(per_key_tokens.values())
-            r = len(logs)
-            f = sum(per_key_errors.values())
-            history.append({
-                "date": hour_start.strftime("%H:%M"),
-                "total_tokens": t,
-                "total_requests": r,
-                "failed_requests": f,
-                "per_key_tokens": per_key_tokens,
-                "per_key_requests": per_key_requests,
-                "per_key_errors": per_key_errors,
-            })
-    elif time_range == "1m":
-        for i in range(29, -1, -1):
-            day = today - timedelta(days=i)
-            _append_day_stats(db, keys, key_ids, key_name_map, day, history)
-    elif time_range == "1y":
-        for i in range(11, -1, -1):
-            month_date = today.replace(day=1) - timedelta(days=i * 30)
-            month_start = month_date.replace(day=1)
-            if month_start.month == 12:
-                month_end = month_start.replace(year=month_start.year + 1, month=1)
-            else:
-                month_end = month_start.replace(month=month_start.month + 1)
-            logs = db.query(models.ApiUsageLog).filter(
-                models.ApiUsageLog.api_key_id.in_(key_ids),
-                func.date(models.ApiUsageLog.timestamp) >= month_start,
-                func.date(models.ApiUsageLog.timestamp) < month_end,
-            ).all()
-            per_key_tokens = {k.name: 0 for k in keys}
-            per_key_requests = {k.name: 0 for k in keys}
-            per_key_errors = {k.name: 0 for k in keys}
-            for l in logs:
-                name = key_name_map.get(l.api_key_id)
-                if not name:
-                    continue
-                per_key_tokens[name] = per_key_tokens.get(name, 0) + (l.tokens_used or 0)
-                per_key_requests[name] = per_key_requests.get(name, 0) + 1
-                if l.is_error:
-                    per_key_errors[name] = per_key_errors.get(name, 0) + 1
-            t = sum(per_key_tokens.values())
-            r = len(logs)
-            f = sum(per_key_errors.values())
-            history.append({
-                "date": month_start.strftime("%b %Y"),
-                "total_tokens": t,
-                "total_requests": r,
-                "failed_requests": f,
-                "per_key_tokens": per_key_tokens,
-                "per_key_requests": per_key_requests,
-                "per_key_errors": per_key_errors,
-            })
-    elif time_range == "all":
-        first_log = db.query(models.ApiUsageLog).filter(
-            models.ApiUsageLog.api_key_id.in_(key_ids)
-        ).order_by(models.ApiUsageLog.timestamp.asc()).first()
-        start_date = first_log.timestamp.date() if first_log else today - timedelta(days=7)
-        delta = (today - start_date).days
-        if delta > 90:
-            start_date = today - timedelta(days=90)
-            delta = 90
-        for i in range(delta, -1, -1):
-            day = today - timedelta(days=i)
-            _append_day_stats(db, keys, key_ids, key_name_map, day, history)
+    # ── History (single aggregate query with GROUP BY) ──
+    if time_range in ("1h", "1d"):
+        cutoff_dt = now - (timedelta(hours=1) if time_range == "1h" else timedelta(hours=24))
+        history = _build_history_recent(db, key_ids, keys, key_name_map, cutoff_dt, now,
+                                        "minute" if time_range == "1h" else "hour")
     else:
-        for i in range(6, -1, -1):
-            day = today - timedelta(days=i)
-            _append_day_stats(db, keys, key_ids, key_name_map, day, history)
+        days_map = {"1m": 30, "1y": 365, "all": 90, "7d": 7}
+        cutoff_date = today - timedelta(days=days_map.get(time_range, 7))
+        history = _build_history_daily(db, key_ids, keys, key_name_map, cutoff_date, today)
 
-    # Per-key breakdown
+    # ── Per-key breakdown (2 aggregate queries instead of 4×N) ──
+    per_key_agg = db.query(
+        models.ApiUsageLog.api_key_id,
+        func.coalesce(func.sum(models.ApiUsageLog.tokens_used), 0),
+        func.count(models.ApiUsageLog.id),
+        func.sum(case((models.ApiUsageLog.is_error == True, 1), else_=0)),
+    ).filter(
+        models.ApiUsageLog.api_key_id.in_(key_ids),
+    ).group_by(models.ApiUsageLog.api_key_id).all()
+    per_key_totals = {r[0]: {"tokens": int(r[1]), "requests": int(r[2]), "errors": int(r[3])} for r in per_key_agg}
+
+    per_key_today_q = db.query(
+        models.ApiUsageLog.api_key_id,
+        func.coalesce(func.sum(models.ApiUsageLog.tokens_used), 0),
+        func.count(models.ApiUsageLog.id),
+    ).filter(
+        models.ApiUsageLog.api_key_id.in_(key_ids),
+        func.date(models.ApiUsageLog.timestamp) == today,
+    ).group_by(models.ApiUsageLog.api_key_id).all()
+    per_key_today_map = {r[0]: {"tokens": int(r[1]), "requests": int(r[2])} for r in per_key_today_q}
+
     per_key = []
-    key_name_map = {}  # id -> name for chart labeling
     for k in keys:
-        key_name_map[k.id] = k.name
-        k_tokens = (
-            db.query(func.sum(models.ApiUsageLog.tokens_used))
-            .filter(models.ApiUsageLog.api_key_id == k.id)
-            .scalar()
-        ) or 0
-        k_requests = db.query(models.ApiUsageLog).filter(
-            models.ApiUsageLog.api_key_id == k.id
-        ).count()
-        k_errors = db.query(models.ApiUsageLog).filter(
-            models.ApiUsageLog.api_key_id == k.id,
-            models.ApiUsageLog.is_error == True,
-        ).count()
-        
-        # Today's stats
-        today_tokens = (
-            db.query(func.sum(models.ApiUsageLog.tokens_used))
-            .filter(
-                models.ApiUsageLog.api_key_id == k.id,
-                func.date(models.ApiUsageLog.timestamp) == today,
-            )
-            .scalar()
-        ) or 0
-        today_requests = (
-            db.query(models.ApiUsageLog)
-            .filter(
-                models.ApiUsageLog.api_key_id == k.id,
-                func.date(models.ApiUsageLog.timestamp) == today,
-            )
-            .count()
-        )
-
+        totals = per_key_totals.get(k.id, {"tokens": 0, "requests": 0, "errors": 0})
+        td = per_key_today_map.get(k.id, {"tokens": 0, "requests": 0})
         per_key.append({
-            "id": k.id,
-            "name": k.name,
-            "provider": k.provider,
-            "category": k.category,
-            "model_name": k.model_name,
+            "id": k.id, "name": k.name, "provider": k.provider,
+            "category": k.category, "model_name": k.model_name,
             "daily_request_limit": k.daily_request_limit,
             "daily_token_limit": k.daily_token_limit,
             "masked_key": k.masked_key,
-            "total_tokens": k_tokens,
-            "total_requests": k_requests,
-            "failed_requests": k_errors,
-            "today_tokens": today_tokens,
-            "today_requests": today_requests,
+            "total_tokens": totals["tokens"], "total_requests": totals["requests"],
+            "failed_requests": totals["errors"],
+            "today_tokens": td["tokens"], "today_requests": td["requests"],
         })
 
-    # Get key groups
-    groups = db.query(models.ApiKeyGroup).filter(
-        models.ApiKeyGroup.user_id == user.id
-    ).all()
+    # ── Key groups ──
+    groups = db.query(models.ApiKeyGroup).filter(models.ApiKeyGroup.user_id == user.id).all()
     groups_data = []
     for g in groups:
-        members_data = []
-        for m in sorted(g.members, key=lambda x: x.priority):
-            members_data.append({
-                "id": m.id,
-                "api_key_id": m.api_key_id,
-                "key_name": m.api_key.name if m.api_key else None,
-                "provider": m.api_key.provider if m.api_key else None,
-                "masked_key": m.api_key.masked_key if m.api_key else None,
-                "status": m.api_key.status if m.api_key else None,
-                "priority": m.priority,
-                "is_enabled": m.is_enabled,
-            })
+        members_data = [{
+            "id": m.id, "api_key_id": m.api_key_id,
+            "key_name": m.api_key.name if m.api_key else None,
+            "provider": m.api_key.provider if m.api_key else None,
+            "masked_key": m.api_key.masked_key if m.api_key else None,
+            "status": m.api_key.status if m.api_key else None,
+            "priority": m.priority, "is_enabled": m.is_enabled,
+        } for m in sorted(g.members, key=lambda x: x.priority)]
         groups_data.append({
-            "id": g.id,
-            "name": g.name,
-            "description": g.description,
-            "strategy": g.strategy,
-            "members": members_data,
+            "id": g.id, "name": g.name, "description": g.description,
+            "strategy": g.strategy, "members": members_data,
             "created_at": g.created_at.isoformat() if g.created_at else None,
         })
 
+    # ── Recent errors ──
     recent_errors_q = (
         db.query(models.ApiUsageLog)
-        .filter(
-            models.ApiUsageLog.api_key_id.in_(key_ids),
-            models.ApiUsageLog.is_error == True,
-        )
-        .order_by(models.ApiUsageLog.timestamp.desc())
-        .limit(20)
-        .all()
+        .filter(models.ApiUsageLog.api_key_id.in_(key_ids), models.ApiUsageLog.is_error == True)
+        .order_by(models.ApiUsageLog.timestamp.desc()).limit(20).all()
     )
-    recent_errors_data = []
-    for e in recent_errors_q:
-        k = next((x for x in keys if x.id == e.api_key_id), None)
-        recent_errors_data.append({
-            "id": e.id,
-            "timestamp": e.timestamp.isoformat() if e.timestamp else None,
-            "key_name": k.name if k else e.api_key_name,
-            "provider": k.provider if k else None,
-            "status_code": e.status_code,
-            "error_message": e.error_message
-        })
+    recent_errors_data = [{
+        "id": e.id,
+        "timestamp": e.timestamp.isoformat() if e.timestamp else None,
+        "key_name": next((x.name for x in keys if x.id == e.api_key_id), e.api_key_name),
+        "provider": next((x.provider for x in keys if x.id == e.api_key_id), None),
+        "status_code": e.status_code, "error_message": e.error_message,
+    } for e in recent_errors_q]
 
     return {
-        "total_keys": total,
-        "active_keys": active,
-        "tokens_today": tokens_today,
-        "requests_today": requests_today,
-        "errors_today": errors_today,
-        "usage_history": history,
-        "per_key": per_key,
-        "key_groups": groups_data,
+        "total_keys": total, "active_keys": active,
+        "tokens_today": tokens_today, "requests_today": requests_today,
+        "errors_today": errors_today, "usage_history": history,
+        "per_key": per_key, "key_groups": groups_data,
         "recent_errors": recent_errors_data,
     }
 
 
-def _append_day_stats(db, keys, key_ids, key_name_map, day, history):
-    """Helper to append a single day's stats to history."""
-    logs = db.query(models.ApiUsageLog).filter(
+def _build_history_daily(db, key_ids, keys, key_name_map, cutoff, today):
+    """Build daily usage history using a single GROUP BY query."""
+    from collections import defaultdict
+    rows = db.query(
+        func.date(models.ApiUsageLog.timestamp).label("day"),
+        models.ApiUsageLog.api_key_id,
+        func.coalesce(func.sum(models.ApiUsageLog.tokens_used), 0),
+        func.count(models.ApiUsageLog.id),
+        func.sum(case((models.ApiUsageLog.is_error == True, 1), else_=0)),
+    ).filter(
         models.ApiUsageLog.api_key_id.in_(key_ids),
-        func.date(models.ApiUsageLog.timestamp) == day,
-    ).all()
+        func.date(models.ApiUsageLog.timestamp) >= cutoff,
+    ).group_by("day", models.ApiUsageLog.api_key_id).all()
 
-    per_key_tokens = {k.name: 0 for k in keys}
-    per_key_requests = {k.name: 0 for k in keys}
-    per_key_errors = {k.name: 0 for k in keys}
-    for l in logs:
-        name = key_name_map.get(l.api_key_id)
-        if not name:
-            continue
-        per_key_tokens[name] = per_key_tokens.get(name, 0) + (l.tokens_used or 0)
-        per_key_requests[name] = per_key_requests.get(name, 0) + 1
-        if l.is_error:
-            per_key_errors[name] = per_key_errors.get(name, 0) + 1
+    buckets = defaultdict(lambda: {k.name: {"t": 0, "r": 0, "e": 0} for k in keys})
+    for day, kid, tokens, reqs, errs in rows:
+        name = key_name_map.get(kid)
+        if name and day:
+            buckets[str(day)][name] = {"t": int(tokens), "r": int(reqs), "e": int(errs)}
 
-    day_tokens = sum(per_key_tokens.values())
-    total_requests = len(logs)
-    failed_requests = sum(per_key_errors.values())
-    history.append({
-        "date": day.isoformat(),
-        "total_tokens": day_tokens,
-        "total_requests": total_requests,
-        "failed_requests": failed_requests,
-        "per_key_tokens": per_key_tokens,
-        "per_key_requests": per_key_requests,
-        "per_key_errors": per_key_errors,
-    })
+    history = []
+    for i in range((today - cutoff).days, -1, -1):
+        ds = (today - timedelta(days=i)).isoformat()
+        b = buckets.get(ds, {k.name: {"t": 0, "r": 0, "e": 0} for k in keys})
+        history.append({
+            "date": ds,
+            "total_tokens": sum(d["t"] for d in b.values()),
+            "total_requests": sum(d["r"] for d in b.values()),
+            "failed_requests": sum(d["e"] for d in b.values()),
+            "per_key_tokens": {n: d["t"] for n, d in b.items()},
+            "per_key_requests": {n: d["r"] for n, d in b.items()},
+            "per_key_errors": {n: d["e"] for n, d in b.items()},
+        })
+    return history
+
+
+def _build_history_recent(db, key_ids, keys, key_name_map, cutoff, now, grain):
+    """Build hourly/minute history using a single GROUP BY query."""
+    from collections import defaultdict
+    extract_fn = func.date_trunc("hour" if grain == "hour" else "minute", models.ApiUsageLog.timestamp)
+    steps = 24 if grain == "hour" else 60
+    step_delta = timedelta(hours=1) if grain == "hour" else timedelta(minutes=1)
+    start = (now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=23)) if grain == "hour" else \
+            (now.replace(second=0, microsecond=0) - timedelta(minutes=59))
+
+    rows = db.query(
+        extract_fn.label("bucket"),
+        models.ApiUsageLog.api_key_id,
+        func.coalesce(func.sum(models.ApiUsageLog.tokens_used), 0),
+        func.count(models.ApiUsageLog.id),
+        func.sum(case((models.ApiUsageLog.is_error == True, 1), else_=0)),
+    ).filter(
+        models.ApiUsageLog.api_key_id.in_(key_ids),
+        models.ApiUsageLog.timestamp >= cutoff,
+    ).group_by("bucket", models.ApiUsageLog.api_key_id).all()
+
+    buckets = defaultdict(lambda: {k.name: {"t": 0, "r": 0, "e": 0} for k in keys})
+    for bucket_ts, kid, tokens, reqs, errs in rows:
+        name = key_name_map.get(kid)
+        if name and bucket_ts:
+            key_str = bucket_ts.strftime("%H:%M") if hasattr(bucket_ts, "strftime") else str(bucket_ts)
+            buckets[key_str][name] = {"t": int(tokens), "r": int(reqs), "e": int(errs)}
+
+    history = []
+    for i in range(steps):
+        t = start + step_delta * i
+        ts = t.strftime("%H:%M")
+        b = buckets.get(ts, {k.name: {"t": 0, "r": 0, "e": 0} for k in keys})
+        history.append({
+            "date": ts,
+            "total_tokens": sum(d["t"] for d in b.values()),
+            "total_requests": sum(d["r"] for d in b.values()),
+            "failed_requests": sum(d["e"] for d in b.values()),
+            "per_key_tokens": {n: d["t"] for n, d in b.items()},
+            "per_key_requests": {n: d["r"] for n, d in b.items()},
+            "per_key_errors": {n: d["e"] for n, d in b.items()},
+        })
+    return history
 
 
 @router.get("/{key_id}/usage", response_model=List[schemas.ApiKeyUsageResponse])
