@@ -42,7 +42,7 @@ function MonitorCard({ monitor, onDelete, onClick, onCategoryChange, allCategori
     getMonitorLogs(monitor.id).then(d => setLogs(d.reverse())).catch(() => {});
     const interval = setInterval(() => {
       getMonitorLogs(monitor.id).then(d => setLogs(d.reverse())).catch(() => {});
-    }, 15000);
+    }, 60000);  // 60s — reduced from 15s to prevent backend overload
     return () => clearInterval(interval);
   }, [monitor.id]);
 
@@ -113,7 +113,7 @@ function DetailModal({ monitor, logs: initialLogs, onClose }) {
   useEffect(() => {
     const intv = setInterval(() => {
       getMonitorLogs(monitor.id).then(d => setLogs(d.reverse())).catch(() => {});
-    }, 5000);
+    }, 30000);  // 30s — reduced from 5s to prevent backend overload
     return () => clearInterval(intv);
   }, [monitor.id]);
 
@@ -378,7 +378,7 @@ export default function SiteMonitor() {
     }).catch(() => setLoading(false));
   };
 
-  useEffect(() => { load(); const i = setInterval(load, 5000); return () => clearInterval(i); }, []);
+  useEffect(() => { load(); const i = setInterval(load, 30000); return () => clearInterval(i); }, []);  // 30s — reduced from 5s
 
   const handleAdd = async (e) => {
     e.preventDefault();
