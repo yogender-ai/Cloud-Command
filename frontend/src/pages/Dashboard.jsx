@@ -1,339 +1,367 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  Globe, KeyRound, Server, Triangle, Activity, Zap, Bell, Shield, Radio,
-  TrendingUp, AlertTriangle, CheckCircle2, Sparkles, RefreshCw
+  Globe, KeyRound, Server, Triangle, Activity,
+  ArrowUpRight, CheckCircle2, XCircle, Zap, TrendingUp, Users,
+  Shield, Flame, Radio
 } from 'lucide-react';
 import {
-  getMonitors, getApiKeySummary, getRenderAccounts,
-  getVercelAccounts, recordVisit, getVisits, getProfile, ensureBackendAwake
-} from '../api';
-import InfraPulseRing from '../components/dashboard/InfraPulseRing';
-import WhatChanged from '../components/dashboard/WhatChanged';
-import TopHighlights from '../components/dashboard/TopHighlights';
-import LiveTrendChart from '../components/dashboard/LiveTrendChart';
-import QuickGlance from '../components/dashboard/QuickGlance';
-import DetailDrawer from '../components/dashboard/DetailDrawer';
+  AreaChart, Area, ResponsiveContainer, XAxis, YAxis,
+  Tooltip, CartesianGrid
+} from 'recharts';
+import { getMonitors, getApiKeySummary, getRenderAccounts, getVercelAccounts, recordVisit, getVisits, ensureBackendAwake } from '../api';
 
-function timeAgo(date) {
-  if (!date) return '';
-  const s = Math.floor((Date.now() - new Date(date).getTime()) / 1000);
-  if (s < 60) return `${s}s ago`;
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
-  return `${Math.floor(s / 3600)}h ago`;
+const cardVariants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: (i) => ({ opacity: 1, y: 0, transition: { delay: i * 0.07, duration: 0.5, ease: [0.16, 1, 0.3, 1] } }),
+};
+
+/* Custom dark tooltip */
+function DashTooltip({ active, payload, label }) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div style={{
+      background: 'rgba(10,10,18,0.95)', backdropFilter: 'blur(12px)',
+      border: '1px solid rgba(99,102,241,0.2)', borderRadius: 10,
+      padding: '10px 14px', boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
+    }}>
+      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginBottom: 4, fontWeight: 600 }}>{label}</div>
+      {payload.map((p, i) => (
+        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: p.color }} />
+          <span style={{ color: 'rgba(255,255,255,0.7)' }}>{p.name}:</span>
+          <span style={{ fontWeight: 700, color: '#fff', marginLeft: 'auto', fontFamily: 'var(--font-mono)' }}>{p.value}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
-function greet(name) {
-  const h = new Date().getHours();
-  const g = h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
-  return name ? `${g}, ${name}` : g;
+/* Radial Gauge for uptime */
+function UptimeGauge({ percentage }) {
+  const radius = 58;
+  const circumference = 2 * Math.PI * radius;
+  const offset = circumference - (percentage / 100) * circumference;
+  const color = percentage >= 99 ? '#10b981' : percentage >= 90 ? '#f59e0b' : '#f43f5e';
+
+  return (
+    <div className="radial-gauge">
+      <svg width="140" height="140" viewBox="0 0 140 140">
+        <circle className="radial-gauge-bg" cx="70" cy="70" r={radius} />
+        <circle
+          className="radial-gauge-fill"
+          cx="70" cy="70" r={radius}
+          stroke={color}
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          style={{ filter: `drop-shadow(0 0 8px ${color})` }}
+        />
+      </svg>
+      <div className="radial-gauge-text">
+        <span style={{ fontSize: 28, fontWeight: 900, color, letterSpacing: '-0.03em' }}>
+          {percentage}%
+        </span>
+        <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 600 }}>
+          Uptime
+        </span>
+      </div>
+    </div>
+  );
 }
 
 export default function Dashboard() {
   const [monitors, setMonitors] = useState([]);
   const [apiSummary, setApiSummary] = useState(null);
-  const [renderAccts, setRenderAccts] = useState([]);
-  const [vercelAccts, setVercelAccts] = useState([]);
+  const [renderAccounts, setRenderAccounts] = useState([]);
+  const [vercelAccounts, setVercelAccounts] = useState([]);
   const [visits, setVisits] = useState([]);
-  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [loadedAt, setLoadedAt] = useState(null);
-  const [drawerItem, setDrawerItem] = useState(null);
-  const [refreshing, setRefreshing] = useState(false);
 
-  const load = async (isRefresh = false) => {
-    if (isRefresh) setRefreshing(true);
-    else setLoading(true);
-    await ensureBackendAwake();
-    recordVisit();
-    const r = await Promise.allSettled([
-      getMonitors(), getApiKeySummary(), getRenderAccounts(),
-      getVercelAccounts(), getVisits(), getProfile(),
-    ]);
-    const v = (i, fb) => r[i].status === 'fulfilled' ? r[i].value : fb;
-    setMonitors(v(0, []));
-    setApiSummary(v(1, null));
-    setRenderAccts(v(2, []));
-    setVercelAccts(v(3, []));
-    const vis = v(4, []);
-    setVisits([...vis].reverse().map(d => ({
-      date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      visits: d.visits,
-    })));
-    setUser(v(5, null));
-    setLoadedAt(new Date());
-    setLoading(false);
-    setRefreshing(false);
-  };
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      // Wake backend first (handles Render cold start)
+      await ensureBackendAwake();
+      if (cancelled) return;
+      recordVisit();
+      // Use allSettled so partial failures don't block the whole dashboard
+      const results = await Promise.allSettled([
+        getMonitors(),
+        getApiKeySummary(),
+        getRenderAccounts(),
+        getVercelAccounts(),
+        getVisits(),
+      ]);
+      if (cancelled) return;
+      const val = (i, fallback) => results[i].status === 'fulfilled' ? results[i].value : fallback;
+      setMonitors(val(0, []));
+      setApiSummary(val(1, null));
+      setRenderAccounts(val(2, []));
+      setVercelAccounts(val(3, []));
+      const vis = val(4, []);
+      const chartData = [...vis].reverse().map(d => ({
+        date: new Date(d.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        visits: d.visits,
+      }));
+      setVisits(chartData);
+      setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
-  useEffect(() => { load(); }, []);
+  const monitorsUp = monitors.filter(m => m.status === 'UP').length;
+  const monitorsDown = monitors.length - monitorsUp;
+  const uptimeNum = monitors.length > 0 ? parseFloat(((monitorsUp / monitors.length) * 100).toFixed(1)) : 0;
 
-  // Derived live data
-  const up = monitors.filter(m => m.status === 'UP').length;
-  const down = monitors.length - up;
-  const uptimePct = monitors.length > 0 ? Math.round((up / monitors.length) * 100) : 0;
-  const pulseScore = useMemo(() => {
-    if (!monitors.length && !apiSummary && !renderAccts.length && !vercelAccts.length) return 0;
-    let s = 0, w = 0;
-    if (monitors.length) { s += uptimePct; w += 1; }
-    if (apiSummary) { s += (apiSummary.errors_today || 0) === 0 ? 100 : 60; w += 1; }
-    if (renderAccts.length) { s += 100; w += 0.5; }
-    if (vercelAccts.length) { s += 100; w += 0.5; }
-    return w > 0 ? Math.round(s / w) : 0;
-  }, [monitors, apiSummary, renderAccts, vercelAccts, uptimePct]);
-
-  const pulseLabel = pulseScore >= 90 ? 'Excellent' : pulseScore >= 70 ? 'Elevated' : pulseScore >= 40 ? 'Degraded' : 'Critical';
-
-  // What Changed items
-  const whatChanged = useMemo(() => [
+  const stats = [
     {
-      id: 'monitors', name: 'Site Monitors', icon: Globe,
-      iconBg: 'rgba(16,185,129,0.12)', iconColor: '#10b981',
-      detail: down > 0 ? `${down} site${down > 1 ? 's' : ''} down` : monitors.length > 0 ? `All ${monitors.length} operational` : 'No monitors yet',
-      severity: down > 0 ? 'high' : monitors.length > 0 ? 'stable' : 'low',
-      trend: down > 0 ? 'down' : 'up',
-      spark: null,
-      drawerTitle: 'Site Monitors',
-      drawerTag: `${up}/${monitors.length} operational`,
-      drawerBody: down > 0
-        ? `${down} monitor${down > 1 ? 's are' : ' is'} currently reporting DOWN status. Immediate attention recommended.`
-        : monitors.length > 0 ? 'All monitored sites are operational and responding within normal parameters.' : 'No monitors configured yet. Add your first site monitor to track uptime.',
-      drawerStats: [
-        { label: 'Total Sites', value: monitors.length, color: '#6366f1' },
-        { label: 'Up', value: up, color: '#10b981' },
-        { label: 'Down', value: down, color: down > 0 ? '#f43f5e' : '#10b981' },
-        { label: 'Uptime', value: `${uptimePct}%`, color: uptimePct >= 90 ? '#10b981' : '#f59e0b' },
-      ],
-      drawerItems: monitors.map(m => ({
-        label: m.name, value: m.status, color: m.status === 'UP' ? '#10b981' : '#f43f5e',
-      })),
-      link: '/monitors',
+      label: 'Sites Monitored', value: monitors.length,
+      sub: monitors.length > 0 ? `${monitorsDown > 0 ? monitorsDown + ' down' : 'all healthy'}` : 'none yet',
+      icon: Globe, color: '#10b981', bg: 'var(--accent-emerald-glow)', link: '/monitors',
     },
     {
-      id: 'apikeys', name: 'API Vault', icon: KeyRound,
-      iconBg: 'rgba(168,85,247,0.12)', iconColor: '#a855f7',
-      detail: apiSummary ? `${(apiSummary.tokens_today || 0).toLocaleString()} tokens used` : 'No keys configured',
-      severity: (apiSummary?.errors_today || 0) > 0 ? 'medium' : apiSummary?.active_keys ? 'stable' : 'low',
-      trend: (apiSummary?.errors_today || 0) > 0 ? 'down' : 'stable',
-      spark: null,
-      drawerTitle: 'API Vault',
-      drawerTag: `${apiSummary?.active_keys || 0} active keys`,
-      drawerBody: apiSummary
-        ? `${(apiSummary.tokens_today || 0).toLocaleString()} tokens consumed today across ${apiSummary.requests_today || 0} requests.${(apiSummary.errors_today || 0) > 0 ? ` ${apiSummary.errors_today} errors detected.` : ' No errors.'}`
-        : 'No API keys configured in the vault.',
-      drawerStats: [
-        { label: 'Total Keys', value: apiSummary?.total_keys || 0, color: '#a855f7' },
-        { label: 'Active', value: apiSummary?.active_keys || 0, color: '#10b981' },
-        { label: 'Tokens Today', value: (apiSummary?.tokens_today || 0).toLocaleString(), color: '#6366f1' },
-        { label: 'Errors', value: apiSummary?.errors_today || 0, color: (apiSummary?.errors_today || 0) > 0 ? '#f43f5e' : '#10b981' },
-      ],
-      link: '/api-keys',
+      label: 'API Keys', value: apiSummary?.total_keys || 0,
+      sub: `${apiSummary?.active_keys || 0} active`,
+      icon: KeyRound, color: '#a855f7', bg: 'var(--accent-purple-glow)', link: '/api-keys',
     },
     {
-      id: 'render', name: 'Render', icon: Server,
-      iconBg: 'rgba(52,211,153,0.12)', iconColor: '#34d399',
-      detail: renderAccts.length > 0 ? `${renderAccts.length} account${renderAccts.length > 1 ? 's' : ''} connected` : 'Not connected',
-      severity: renderAccts.length > 0 ? 'stable' : 'low',
-      trend: renderAccts.length > 0 ? 'up' : 'stable',
-      spark: null,
-      drawerTitle: 'Render Platform',
-      drawerTag: `${renderAccts.length} connected`,
-      drawerBody: renderAccts.length > 0
-        ? `${renderAccts.length} Render account${renderAccts.length > 1 ? 's are' : ' is'} connected. Manage services, deployments, and environment variables.`
-        : 'No Render accounts connected. Connect one to manage your cloud services.',
-      drawerStats: [{ label: 'Accounts', value: renderAccts.length, color: '#34d399' }],
-      drawerItems: renderAccts.map(a => ({ label: a.name || a.email || 'Account', value: 'Connected', color: '#34d399' })),
-      link: '/render',
+      label: 'Render', value: renderAccounts.length,
+      sub: 'connected', icon: Server, color: '#34d399',
+      bg: 'var(--accent-emerald-glow)', link: '/render',
     },
     {
-      id: 'vercel', name: 'Vercel', icon: Triangle,
-      iconBg: 'rgba(255,255,255,0.06)', iconColor: '#e0e0e8',
-      detail: vercelAccts.length > 0 ? `${vercelAccts.length} account${vercelAccts.length > 1 ? 's' : ''} connected` : 'Not connected',
-      severity: vercelAccts.length > 0 ? 'stable' : 'low',
-      trend: vercelAccts.length > 0 ? 'up' : 'stable',
-      spark: null,
-      drawerTitle: 'Vercel Platform',
-      drawerTag: `${vercelAccts.length} connected`,
-      drawerBody: vercelAccts.length > 0
-        ? `${vercelAccts.length} Vercel account${vercelAccts.length > 1 ? 's are' : ' is'} connected. Deploy, monitor, and manage your frontend projects.`
-        : 'No Vercel accounts connected yet.',
-      drawerStats: [{ label: 'Accounts', value: vercelAccts.length, color: '#e0e0e8' }],
-      drawerItems: vercelAccts.map(a => ({ label: a.name || a.email || 'Account', value: 'Connected', color: '#e0e0e8' })),
-      link: '/vercel',
+      label: 'Vercel', value: vercelAccounts.length,
+      sub: 'connected', icon: Triangle, color: '#f0f0f5',
+      bg: 'rgba(255,255,255,0.04)', link: '/vercel',
     },
-  ], [monitors, apiSummary, renderAccts, vercelAccts, up, down, uptimePct]);
+  ];
 
-  // Top 3 highlights (dynamically computed)
-  const highlights = useMemo(() => {
-    const items = [];
-    if (down > 0) {
-      const downNames = monitors.filter(m => m.status !== 'UP').map(m => m.name).join(', ');
-      items.push({
-        id: 'h-down', tag: 'MONITORS', icon: AlertTriangle,
-        tagBg: 'rgba(244,63,94,0.15)', tagColor: '#f43f5e',
-        title: `${down} site${down > 1 ? 's' : ''} reporting DOWN`,
-        body: `${downNames} ${down > 1 ? 'are' : 'is'} currently unreachable. Check connectivity and server status.`,
-        impact: 'high', time: 'Now', link: '/monitors',
-        drawerTitle: 'Sites Down', iconColor: '#f43f5e',
-        drawerBody: `The following sites are currently down: ${downNames}. Investigate immediately.`,
-        drawerStats: [{ label: 'Down', value: down, color: '#f43f5e' }, { label: 'Up', value: up, color: '#10b981' }],
-      });
-    }
-    if ((apiSummary?.tokens_today || 0) > 0) {
-      items.push({
-        id: 'h-tokens', tag: 'API VAULT', icon: Zap,
-        tagBg: 'rgba(168,85,247,0.15)', tagColor: '#a855f7',
-        title: `${(apiSummary.tokens_today).toLocaleString()} tokens consumed today`,
-        body: `${apiSummary.requests_today || 0} API requests processed across ${apiSummary.active_keys || 0} active keys.`,
-        impact: (apiSummary.errors_today || 0) > 0 ? 'medium' : 'low', time: 'Today', link: '/api-keys',
-        drawerTitle: 'Token Usage', icon: Zap, iconColor: '#a855f7',
-        drawerBody: `Today's gateway activity: ${(apiSummary.tokens_today).toLocaleString()} tokens, ${apiSummary.requests_today || 0} requests, ${apiSummary.errors_today || 0} errors.`,
-        drawerStats: [
-          { label: 'Tokens', value: (apiSummary.tokens_today).toLocaleString(), color: '#a855f7' },
-          { label: 'Requests', value: apiSummary.requests_today || 0, color: '#6366f1' },
-        ],
-      });
-    }
-    if (monitors.length > 0 && down === 0) {
-      items.push({
-        id: 'h-allup', tag: 'INFRASTRUCTURE', icon: CheckCircle2,
-        tagBg: 'rgba(16,185,129,0.15)', tagColor: '#10b981',
-        title: `All ${monitors.length} sites fully operational`,
-        body: `Every monitored endpoint is responding. System health is at ${uptimePct}%.`,
-        impact: 'low', time: 'Now', link: '/monitors',
-        drawerTitle: 'All Systems Go', icon: Shield, iconColor: '#10b981',
-        drawerBody: `All ${monitors.length} monitored sites are healthy and responding normally.`,
-        drawerStats: [{ label: 'Uptime', value: `${uptimePct}%`, color: '#10b981' }],
-      });
-    }
-    if (renderAccts.length > 0) {
-      items.push({
-        id: 'h-render', tag: 'RENDER', icon: Server,
-        tagBg: 'rgba(52,211,153,0.15)', tagColor: '#34d399',
-        title: `${renderAccts.length} Render account${renderAccts.length > 1 ? 's' : ''} active`,
-        body: 'Cloud services connected and manageable from the command center.',
-        impact: 'low', time: 'Connected', link: '/render',
-        drawerTitle: 'Render Services', icon: Server, iconColor: '#34d399',
-        drawerBody: `${renderAccts.length} Render account(s) are connected. Manage deploys and services.`,
-      });
-    }
-    if (vercelAccts.length > 0) {
-      items.push({
-        id: 'h-vercel', tag: 'VERCEL', icon: Triangle,
-        tagBg: 'rgba(255,255,255,0.08)', tagColor: '#e0e0e8',
-        title: `${vercelAccts.length} Vercel account${vercelAccts.length > 1 ? 's' : ''} linked`,
-        body: 'Frontend deployments tracked and managed.',
-        impact: 'low', time: 'Connected', link: '/vercel',
-        drawerTitle: 'Vercel Deployments', icon: Triangle, iconColor: '#e0e0e8',
-        drawerBody: `${vercelAccts.length} Vercel account(s) connected for deployment management.`,
-      });
-    }
-    if ((apiSummary?.errors_today || 0) > 0) {
-      items.push({
-        id: 'h-errors', tag: 'GATEWAY', icon: AlertTriangle,
-        tagBg: 'rgba(245,158,11,0.15)', tagColor: '#f59e0b',
-        title: `${apiSummary.errors_today} API errors detected today`,
-        body: 'Some gateway requests returned errors. Review the API vault for details.',
-        impact: 'medium', time: 'Today', link: '/api-keys',
-        drawerTitle: 'API Errors', icon: AlertTriangle, iconColor: '#f59e0b',
-        drawerBody: `${apiSummary.errors_today} error(s) detected in today's gateway traffic.`,
-      });
-    }
-    return items.slice(0, 3);
-  }, [monitors, apiSummary, renderAccts, vercelAccts, up, down, uptimePct]);
-
-  // Quick Glance
-  const quickGlance = useMemo(() => [
-    { id: 'qg-sites', icon: Globe, label: 'Sites Monitored', value: monitors.length,
-      delta: down > 0 ? `${down} down` : null, deltaColor: down > 0 ? '#f43f5e' : '#10b981',
-      color: '#10b981', link: '/monitors' },
-    { id: 'qg-keys', icon: KeyRound, label: 'API Keys', value: apiSummary?.total_keys || 0,
-      delta: apiSummary?.active_keys ? `${apiSummary.active_keys} active` : null, deltaColor: '#10b981',
-      color: '#a855f7', link: '/api-keys' },
-    { id: 'qg-alerts', icon: AlertTriangle, label: 'Errors Today', value: apiSummary?.errors_today || 0,
-      delta: (apiSummary?.errors_today || 0) > 0 ? 'View' : null, deltaColor: '#f43f5e',
-      color: (apiSummary?.errors_today || 0) > 0 ? '#f43f5e' : '#10b981', link: '/api-keys' },
-    { id: 'qg-tokens', icon: Zap, label: 'Tokens Today', value: (apiSummary?.tokens_today || 0).toLocaleString(),
-      color: '#6366f1', link: '/api-keys' },
-  ], [monitors, apiSummary, down]);
-
-  // Loading
   if (loading) {
     return (
-      <div className="cc-dashboard">
-        <div className="cc-loading">
-          <div className="cc-loading-ring" />
-          <motion.p initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }}>
-            Initializing command center...
-          </motion.p>
+      <div className="page-container">
+        <div className="loading-screen">
+          <div className="spinner" />
+          <p>Initializing command center...</p>
         </div>
       </div>
     );
   }
 
   const totalVisits = visits.reduce((s, d) => s + d.visits, 0);
-  const userName = user?.email ? user.email.split('@')[0] : '';
 
   return (
-    <div className="cc-dashboard">
-      {/* Header */}
-      <motion.header className="cc-header" initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}>
-        <div className="cc-header-left">
-          <h1 className="cc-greeting">{greet(userName)}</h1>
-          <p className="cc-greeting-sub">Here's what's moving your infrastructure right now.</p>
-        </div>
-        <div className="cc-header-right">
-          <button className="cc-refresh-btn" onClick={() => load(true)} disabled={refreshing}>
-            <RefreshCw size={14} className={refreshing ? 'cc-spin' : ''} />
-            {loadedAt && <span>Updated {timeAgo(loadedAt)}</span>}
-          </button>
-          <div className="cc-header-avatar">{userName ? userName[0].toUpperCase() : '?'}</div>
-        </div>
-      </motion.header>
-
-      {/* Main Grid */}
-      <div className="cc-grid">
-        <div className="cc-primary">
-          {/* Pulse + What Changed */}
-          <div className="cc-top-row">
-            <InfraPulseRing
-              score={pulseScore}
-              label={pulseLabel}
-              detail={`Overall health across all ${monitors.length + (apiSummary ? 1 : 0) + renderAccts.length + vercelAccts.length} connected systems.`}
-            />
-            <WhatChanged items={whatChanged} onSelect={setDrawerItem} />
-          </div>
-
-          {/* Top Highlights */}
-          <TopHighlights items={highlights} onSelect={setDrawerItem} />
-        </div>
-
-        {/* Right Panel */}
-        <aside className="cc-right">
-          <LiveTrendChart
-            data={visits}
-            title={`Live Platform Pulse · ${totalVisits.toLocaleString()} visits`}
-          />
-          <QuickGlance items={quickGlance} />
-
-          {/* Quote */}
-          <motion.div
-            className="cc-quote"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.8 }}
-          >
-            <Sparkles size={16} className="cc-quote-icon" />
-            <blockquote>
-              <p>"Your infrastructure is not random.<br />It's connected.<br />We help you command it."</p>
-              <cite>— Cloud Command</cite>
-            </blockquote>
-          </motion.div>
-        </aside>
+    <div className="page-container">
+      {/* Hero */}
+      <div style={{ marginBottom: 40 }}>
+        <motion.h1
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="gradient-text-animated"
+          style={{ fontSize: 36, fontWeight: 900, letterSpacing: '-0.04em' }}
+        >
+          Command Center
+        </motion.h1>
+        <motion.p
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.1 }}
+          className="page-subtitle"
+          style={{ fontSize: 15 }}
+        >
+          Real-time overview of your infrastructure, APIs, and deployments.
+        </motion.p>
       </div>
 
-      {/* Detail Drawer */}
-      <DetailDrawer item={drawerItem} onClose={() => setDrawerItem(null)} />
+      {/* Stat Cards */}
+      <div className="grid grid-4" style={{ marginBottom: 32 }}>
+        {stats.map((s, i) => {
+          const Icon = s.icon;
+          return (
+            <motion.div key={s.label} custom={i} initial="hidden" animate="visible" variants={cardVariants}>
+              <Link to={s.link} style={{ textDecoration: 'none', color: 'inherit' }}>
+                <div className="card card-interactive stat-card" style={{ borderLeft: `3px solid ${s.color}` }}>
+                  <div className="stat-icon" style={{ background: s.bg }}>
+                    <Icon size={20} color={s.color} />
+                  </div>
+                  <div>
+                    <div className="stat-label">{s.label}</div>
+                    <div className="stat-value" style={{ color: s.color }}>{s.value}</div>
+                    {s.sub && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{s.sub}</div>}
+                  </div>
+                  <ArrowUpRight size={16} color="var(--text-muted)" style={{ marginLeft: 'auto', opacity: 0.5 }} />
+                </div>
+              </Link>
+            </motion.div>
+          );
+        })}
+      </div>
+
+      {/* Uptime Gauge + System Status + Tokens */}
+      <div className="grid grid-3" style={{ marginBottom: 32 }}>
+        <motion.div
+          initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}
+          className="card"
+          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32 }}
+        >
+          {monitors.length > 0 ? (
+            <UptimeGauge percentage={uptimeNum} />
+          ) : (
+            <>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: 8 }}>
+                Global Uptime
+              </div>
+              <div style={{ fontSize: 42, fontWeight: 900, color: 'var(--text-muted)' }}>–</div>
+            </>
+          )}
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+            {monitors.length > 0 ? `${monitorsUp}/${monitors.length} sites up` : 'No monitors'}
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.42 }}
+          className="card"
+          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32 }}
+        >
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: 12 }}>
+            System Status
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+            <div style={{
+              width: 14, height: 14, borderRadius: '50%',
+              background: monitorsDown > 0 ? 'var(--accent-rose)' : 'var(--accent-emerald)',
+              boxShadow: monitorsDown > 0 ? '0 0 20px var(--accent-rose)' : '0 0 20px var(--accent-emerald)',
+              animation: 'pulse-dot 2s ease infinite',
+            }} />
+            <span style={{
+              fontSize: 20, fontWeight: 700,
+              color: monitorsDown > 0 ? 'var(--accent-rose)' : 'var(--accent-emerald)',
+            }}>
+              {monitorsDown > 0 ? `${monitorsDown} Degraded` : 'Fully Operational'}
+            </span>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+            {monitors.length === 0 ? 'No monitors configured' : 'All systems monitored'}
+          </div>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}
+          className="card"
+          style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 32, position: 'relative', overflow: 'hidden' }}
+        >
+          <div style={{ position: 'absolute', top: 12, right: 12, opacity: 0.04 }}>
+            <Zap size={70} />
+          </div>
+          <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)', marginBottom: 8 }}>
+            Tokens Used Today
+          </div>
+          <div style={{ fontSize: 38, fontWeight: 900, color: 'var(--accent-purple)', letterSpacing: '-0.02em' }}>
+            {(apiSummary?.tokens_today || 0).toLocaleString()}
+          </div>
+          <div style={{ display: 'flex', gap: 16, marginTop: 10, fontSize: 11, color: 'var(--text-muted)' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Radio size={10} color="var(--accent-indigo)" /> {apiSummary?.requests_today || 0} requests
+            </span>
+            {(apiSummary?.errors_today || 0) > 0 && (
+              <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--accent-rose)' }}>
+                <Flame size={10} /> {apiSummary.errors_today} errors
+              </span>
+            )}
+          </div>
+        </motion.div>
+      </div>
+
+      {/* Platform Visits Chart */}
+      {visits.length > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.55 }}
+          style={{ marginBottom: 32 }}
+        >
+          <div className="chart-container">
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <h3 className="chart-title" style={{ margin: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <Users size={16} style={{ display: 'inline' }} /> Platform Visits
+              </h3>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                {totalVisits.toLocaleString()} total · last 30 days
+              </span>
+            </div>
+            <div style={{ height: 200 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={visits}>
+                  <defs>
+                    <linearGradient id="visitGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="var(--accent-indigo)" stopOpacity={0.25} />
+                      <stop offset="95%" stopColor="var(--accent-indigo)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} stroke="transparent" interval="preserveStartEnd" />
+                  <YAxis tick={{ fontSize: 10, fill: 'rgba(255,255,255,0.4)' }} stroke="transparent" width={35} />
+                  <Tooltip content={<DashTooltip />} />
+                  <Area type="monotone" dataKey="visits" stroke="var(--accent-indigo)" fill="url(#visitGrad)" strokeWidth={2.5} dot={false} activeDot={{ r: 4, fill: 'var(--accent-indigo)', stroke: '#fff', strokeWidth: 2 }} name="Visits" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Quick Monitor Status Grid */}
+      {monitors.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.65 }}>
+          <div className="card" style={{ padding: 24 }}>
+            <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Activity size={16} color="var(--accent-indigo)" /> Monitor Status
+            </h3>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {monitors.map(m => (
+                <Link key={m.id} to="/monitors" style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '8px 14px', borderRadius: 'var(--radius-md)',
+                  background: m.status === 'UP' ? 'var(--accent-emerald-glow)' : 'var(--accent-rose-glow)',
+                  border: `1px solid ${m.status === 'UP' ? 'rgba(16,185,129,0.15)' : 'rgba(244,63,94,0.15)'}`,
+                  textDecoration: 'none', color: 'inherit', fontSize: 13, fontWeight: 600,
+                  transition: 'all 0.25s cubic-bezier(0.4,0,0.2,1)',
+                }}
+                  onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = m.status === 'UP' ? '0 0 16px rgba(16,185,129,0.2)' : '0 0 16px rgba(244,63,94,0.2)'; }}
+                  onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none'; }}
+                >
+                  {m.status === 'UP'
+                    ? <CheckCircle2 size={14} color="var(--accent-emerald)" />
+                    : <XCircle size={14} color="var(--accent-rose)" />
+                  }
+                  <span style={{ color: m.status === 'UP' ? 'var(--accent-emerald)' : 'var(--accent-rose)' }}>
+                    {m.name}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Empty State */}
+      {monitors.length === 0 && !apiSummary?.total_keys && renderAccounts.length === 0 && vercelAccounts.length === 0 && (
+        <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.6 }}>
+          <div className="card" style={{ padding: 48, textAlign: 'center' }}>
+            <div style={{ width: 64, height: 64, borderRadius: 'var(--radius-lg)', background: 'var(--accent-indigo-glow)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+              <Activity size={28} color="var(--accent-indigo)" />
+            </div>
+            <h3 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8 }}>Welcome to Cloud Command</h3>
+            <p style={{ color: 'var(--text-muted)', marginBottom: 24, maxWidth: 400, margin: '0 auto 24px' }}>
+              Get started by adding a site monitor, connecting a Render or Vercel account, or adding your API keys.
+            </p>
+            <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
+              <Link to="/monitors" className="btn btn-primary"><Globe size={15} /> Add Monitor</Link>
+              <Link to="/api-keys" className="btn btn-secondary"><KeyRound size={15} /> Add API Key</Link>
+              <Link to="/render" className="btn btn-secondary"><Server size={15} /> Connect Render</Link>
+            </div>
+          </div>
+        </motion.div>
+      )}
     </div>
   );
 }
