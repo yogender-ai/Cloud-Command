@@ -358,7 +358,7 @@ export default function SiteMonitor() {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [selected, setSelected] = useState(null);
-  const [form, setForm] = useState({ name: '', url: 'https://', category: '', interval_seconds: 60 });
+  const [form, setForm] = useState({ name: '', url: 'https://', category: '', interval_seconds: 300 });
   const [adding, setAdding] = useState(false);
   const [filterCat, setFilterCat] = useState('All');
   const prevStatuses = useRef({});
@@ -387,7 +387,7 @@ export default function SiteMonitor() {
     try {
       await addMonitor(form);
       setShowAdd(false);
-      setForm({ name: '', url: 'https://', category: '', interval_seconds: 60 });
+      setForm({ name: '', url: 'https://', category: '', interval_seconds: 300 });
       load();
       toast.success('Monitor deployed');
     } catch (err) {
@@ -513,7 +513,7 @@ export default function SiteMonitor() {
                 <div className="form-group">
                   <label className="form-label">Polling Interval</label>
                   <div className="interval-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
-                    {[30, 60, 120, 300].map(v => (
+                    {[300, 600, 900, 1800].map(v => (
                       <button key={v} type="button" onClick={() => setForm({...form, interval_seconds: v})}
                         className={`btn ${form.interval_seconds === v ? 'btn-primary' : 'btn-secondary'}`} style={{ justifyContent: 'center', fontSize: 12 }}>
                         {v < 60 ? `${v}s` : `${v / 60}m`}

@@ -28,6 +28,7 @@ def create_monitor(
     user: models.User = Depends(get_current_user),
 ):
     """Create a new site monitor."""
+    interval = max(settings.MIN_MONITOR_INTERVAL_SECONDS, req.interval_seconds or 60)
     count = db.query(models.Monitor).filter(models.Monitor.user_id == user.id).count()
     if count >= settings.MAX_MONITORS_PER_USER:
         raise HTTPException(
@@ -40,7 +41,7 @@ def create_monitor(
         url=req.url,
         name=req.name,
         category=req.category,
-        interval_seconds=req.interval_seconds,
+        interval_seconds=interval,
         status="UP",
     )
     db.add(monitor)
@@ -51,7 +52,7 @@ def create_monitor(
     try:
         from services.mailer import send_monitor_action_email
         alert_to = user.notification_email or user.email
-        send_monitor_action_email(to=alert_to, action="added", url=req.url)
+        send_monitor_action_email(to=alert_to, action="added", url=req.url, interval=interval)
     except Exception as e:
         print(f"Monitor add email failed: {e}")
 
@@ -298,4 +299,3 @@ async def inspect_monitor(
         result["headers"] = {"error": str(e)}
 
     return result
-

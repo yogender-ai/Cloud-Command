@@ -147,6 +147,10 @@ export const getVercelEnvVars = (accountId, projectId) => api.get(`/vercel/accou
 
 // ── Analytics ──
 export const recordVisit = () => {
+  const todayKey = new Date().toISOString().slice(0, 10);
+  const storageKey = `cloud-command-visit-${todayKey}`;
+  if (sessionStorage.getItem(storageKey)) return Promise.resolve();
+  sessionStorage.setItem(storageKey, '1');
   const tzOffset = (new Date()).getTimezoneOffset() * 60000;
   const localDate = (new Date(Date.now() - tzOffset)).toISOString().split('T')[0];
   return api.post('/analytics/visit', { local_date: localDate }).catch(() => {});

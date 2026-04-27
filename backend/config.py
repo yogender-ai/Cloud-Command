@@ -4,6 +4,13 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 class Settings:
     DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./cloud_command.db")
     JWT_SECRET: str = os.getenv("JWT_SECRET", "CHANGE-ME-IN-PRODUCTION")
@@ -17,6 +24,12 @@ class Settings:
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
 
     RENDER_EXTERNAL_URL: str = os.getenv("RENDER_EXTERNAL_URL", "")
+
+    ENABLE_BACKGROUND_PINGER: bool = _env_bool("ENABLE_BACKGROUND_PINGER", True)
+    ENABLE_SCHEDULED_JOBS: bool = _env_bool("ENABLE_SCHEDULED_JOBS", True)
+    ENABLE_SELF_PING: bool = _env_bool("ENABLE_SELF_PING", False)
+    MIN_MONITOR_INTERVAL_SECONDS: int = int(os.getenv("MIN_MONITOR_INTERVAL_SECONDS", "300"))
+    MONITOR_LOG_RETENTION_PER_MONITOR: int = int(os.getenv("MONITOR_LOG_RETENTION_PER_MONITOR", "500"))
 
     # Limits
     MAX_MONITORS_PER_USER: int = 20

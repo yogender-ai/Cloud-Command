@@ -24,6 +24,10 @@ from slowapi.errors import RateLimitExceeded
 
 async def run_pinger_background():
     """Start the background pinger task."""
+    if not settings.ENABLE_BACKGROUND_PINGER and not settings.ENABLE_SCHEDULED_JOBS:
+        print("Background pinger and scheduled jobs disabled")
+        return
+
     # Give uvicorn time to finish startup and bind $PORT before any DB work.
     await asyncio.sleep(15)
     from services.pinger import start_pinger
@@ -32,7 +36,7 @@ async def run_pinger_background():
 
 async def run_self_ping_background():
     """Keep the Render service warm while it is already running."""
-    if not settings.RENDER_EXTERNAL_URL:
+    if not settings.ENABLE_SELF_PING or not settings.RENDER_EXTERNAL_URL:
         return
 
     import httpx
@@ -253,4 +257,3 @@ def get_visits():
         return [{"date": v.date.isoformat(), "visits": v.visits} for v in visits]
     finally:
         db.close()
-

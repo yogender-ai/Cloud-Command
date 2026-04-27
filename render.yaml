@@ -20,5 +20,15 @@ services:
         sync: false
       - key: RENDER_EXTERNAL_URL
         sync: false
+      - key: ENABLE_BACKGROUND_PINGER
+        value: true
+      - key: ENABLE_SCHEDULED_JOBS
+        value: true
+      - key: ENABLE_SELF_PING
+        value: false
+      - key: MIN_MONITOR_INTERVAL_SECONDS
+        value: 300
+      - key: MONITOR_LOG_RETENTION_PER_MONITOR
+        value: 500
       - key: PYTHON_VERSION
         value: 3.11.0

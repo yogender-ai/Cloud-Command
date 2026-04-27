@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from database import SessionLocal
 import models
+from config import settings
 
 
 # Realistic browser headers to avoid being blocked by CDNs / rate limiters
@@ -106,8 +107,9 @@ def _load_due_monitors():
                     last = last.replace(tzinfo=timezone.utc)
                 else:
                     last = last.astimezone(timezone.utc)
+                interval = max(settings.MIN_MONITOR_INTERVAL_SECONDS, monitor.interval_seconds or 60)
                 elapsed = (now - last).total_seconds()
-                if elapsed < monitor.interval_seconds - 2:
+                if elapsed < interval - 2:
                     continue
             due.append({
                 "id": monitor.id,
@@ -170,6 +172,23 @@ def _save_ping_results(due, results, now):
                 except Exception as e:
                     print(f"Alert email failed: {e}")
 
+            if settings.MONITOR_LOG_RETENTION_PER_MONITOR > 0:
+                old_log_ids = [
+                    row.id
+                    for row in (
+                        db.query(models.MonitorLog.id)
+                        .filter(models.MonitorLog.monitor_id == monitor_id)
+                        .order_by(models.MonitorLog.created_at.desc())
+                        .offset(settings.MONITOR_LOG_RETENTION_PER_MONITOR)
+                        .limit(100)
+                        .all()
+                    )
+                ]
+                if old_log_ids:
+                    db.query(models.MonitorLog).filter(models.MonitorLog.id.in_(old_log_ids)).delete(
+                        synchronize_session=False
+                    )
+
         db.commit()
         print(f"Pinged {len(due)} monitor(s)")
     except Exception as e:
@@ -199,15 +218,17 @@ async def ping_all_monitors():
 
 
 async def start_pinger():
-    """Run the pinger loop every 30 seconds."""
+    """Run enabled background workers on a calm cadence."""
     print("🔄 Pinger engine started")
     while True:
         try:
-            await asyncio.wait_for(ping_all_monitors(), timeout=25)
-            from services.scheduler import run_due_scheduled_jobs
-            await asyncio.wait_for(run_due_scheduled_jobs(), timeout=25)
+            if settings.ENABLE_BACKGROUND_PINGER:
+                await asyncio.wait_for(ping_all_monitors(), timeout=25)
+            if settings.ENABLE_SCHEDULED_JOBS:
+                from services.scheduler import run_due_scheduled_jobs
+                await asyncio.wait_for(run_due_scheduled_jobs(), timeout=25)
         except asyncio.TimeoutError:
-            print("Pinger cycle timed out; skipping this tick")
+            print("Background worker cycle timed out; skipping this tick")
         except Exception as e:
-            print(f"Pinger loop error: {e}")
-        await asyncio.sleep(30)
+            print(f"Background worker loop error: {e}")
+        await asyncio.sleep(60)
