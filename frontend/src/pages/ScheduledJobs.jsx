@@ -35,19 +35,28 @@ const emptyForm = {
   is_enabled: true,
 };
 
-const newsIntelBody = JSON.stringify({
-  topics: ['ai', 'tech', 'markets'],
-  regions: ['global'],
-  max_articles: 60,
-}, null, 2);
+const newsIntelBody = JSON.stringify({}, null, 2);
 
-const newsIntelPreset = {
-  name: 'NewsIntel ingestion',
+const newsIntelIngestPreset = {
+  name: 'NewsIntel MVP Ingest',
   category: 'News-Intel',
-  url: 'https://newsintel-xvhe.onrender.com/api/admin/ingest-now',
+  url: 'https://newsintel.yogender1.me/api/admin/ingest-now',
   method: 'POST',
-  interval_seconds: 900,
-  timeout_seconds: 90,
+  interval_seconds: 600,
+  timeout_seconds: 120,
+  header_name: 'X-Ingest-Secret',
+  header_value: '',
+  body_json: newsIntelBody,
+  is_enabled: true,
+};
+
+const newsIntelEnrichPreset = {
+  name: 'NewsIntel MVP Enrich Batch',
+  category: 'News-Intel',
+  url: 'https://newsintel.yogender1.me/api/admin/enrich-batch',
+  method: 'POST',
+  interval_seconds: 120,
+  timeout_seconds: 120,
   header_name: 'X-Ingest-Secret',
   header_value: '',
   body_json: newsIntelBody,
@@ -114,8 +123,13 @@ export default function ScheduledJobs() {
     setShowAdd(true);
   };
 
-  const openNewsIntelPreset = () => {
-    setForm(newsIntelPreset);
+  const openNewsIntelIngestPreset = () => {
+    setForm(newsIntelIngestPreset);
+    setShowAdd(true);
+  };
+
+  const openNewsIntelEnrichPreset = () => {
+    setForm(newsIntelEnrichPreset);
     setShowAdd(true);
   };
 
@@ -160,7 +174,8 @@ export default function ScheduledJobs() {
         </div>
         <div className="header-actions">
           <button className="btn btn-secondary" onClick={load}><RefreshCcw size={16} /> Refresh</button>
-          <button className="btn btn-secondary" onClick={openNewsIntelPreset}><Activity size={16} /> NewsIntel Preset</button>
+          <button className="btn btn-secondary" onClick={openNewsIntelIngestPreset}><Activity size={16} /> NewsIntel Ingest</button>
+          <button className="btn btn-secondary" onClick={openNewsIntelEnrichPreset}><Activity size={16} /> NewsIntel Enrich</button>
           <button className="btn btn-primary" onClick={openBlankJob}><Plus size={16} /> New Job</button>
         </div>
       </div>
@@ -169,9 +184,10 @@ export default function ScheduledJobs() {
         <div className="empty-state">
           <div className="empty-state-icon"><Clock size={28} color="var(--accent-indigo)" /></div>
           <h3>No scheduled jobs</h3>
-          <p>Create a 15-minute NewsIntel ingestion trigger and Cloud Command will call it automatically.</p>
+          <p>Create NewsIntel ingestion and enrichment triggers and Cloud Command will call them automatically.</p>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-            <button className="btn btn-secondary" onClick={openNewsIntelPreset}>Use NewsIntel Preset</button>
+            <button className="btn btn-secondary" onClick={openNewsIntelIngestPreset}>Use Ingest Preset</button>
+            <button className="btn btn-secondary" onClick={openNewsIntelEnrichPreset}>Use Enrich Preset</button>
             <button className="btn btn-primary" onClick={openBlankJob}>Create Blank Job</button>
           </div>
         </div>
@@ -274,6 +290,8 @@ export default function ScheduledJobs() {
                   <div className="form-group">
                     <label className="form-label">Interval</label>
                     <select className="form-input" value={form.interval_seconds} onChange={(e) => setForm({ ...form, interval_seconds: Number(e.target.value) })}>
+                      <option value={120}>2 minutes</option>
+                      <option value={600}>10 minutes</option>
                       <option value={900}>15 minutes</option>
                       <option value={1800}>30 minutes</option>
                       <option value={3600}>1 hour</option>
@@ -300,7 +318,7 @@ export default function ScheduledJobs() {
                   <textarea className="form-input form-input-mono" rows={8} value={form.body_json} onChange={(e) => setForm({ ...form, body_json: e.target.value })} />
                 </div>
                 <button className="btn btn-primary" type="submit" disabled={saving}>
-                  {saving ? <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> : <><Activity size={16} /> Create 15m Job</>}
+                  {saving ? <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> : <><Activity size={16} /> Create Job</>}
                 </button>
               </form>
             </motion.div>
