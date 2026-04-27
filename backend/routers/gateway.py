@@ -288,13 +288,43 @@ def verify_gateway_auth(request: Request, db: Session = Depends(get_db)) -> int:
     
     return gateway_key.user_id
 
-def _pick_from_group(db: Session, user_id: int, provider: str, category: str = None) -> models.ApiKey:
-    """Try to find and pick a key using key groups with strategy-based selection."""
+def _usage_count(db: Session, api_key_id: int) -> int:
+    from sqlalchemy import func
+    return db.query(func.count(models.ApiUsageLog.id)).filter(
+        models.ApiUsageLog.api_key_id == api_key_id
+    ).scalar() or 0
+
+
+def _category_matches_group(group: models.ApiKeyGroup, category: str | None) -> bool:
+    if not category:
+        return True
+    needle = category.lower().replace("-", " ").strip()
+    haystack = f"{group.name or ''} {group.description or ''}".lower().replace("-", " ")
+    return needle in haystack
+
+
+def _candidate_keys_from_groups(db: Session, user_id: int, provider: str, category: str = None) -> list[models.ApiKey]:
+    """Return ordered usable keys from matching groups.
+
+    If a group is named for the project (for example "News Intel"), every
+    enabled provider key in that group is eligible, even when individual keys
+    do not have a category set. This lets project groups act as the source of
+    truth for automatic fallback.
+    """
     import random as rng
-    
-    # Find groups that have matching keys
+
     groups = db.query(models.ApiKeyGroup).filter(models.ApiKeyGroup.user_id == user_id).all()
-    for group in groups:
+    category_groups = [group for group in groups if _category_matches_group(group, category)]
+    ordered_groups = category_groups or groups
+    output: list[models.ApiKey] = []
+    seen: set[int] = set()
+
+    def add_key(api_key: models.ApiKey):
+        if api_key.id not in seen:
+            seen.add(api_key.id)
+            output.append(api_key)
+
+    for group in ordered_groups:
         enabled_members = [
             m for m in group.members 
             if m.is_enabled 
@@ -302,7 +332,7 @@ def _pick_from_group(db: Session, user_id: int, provider: str, category: str = N
             and m.api_key.provider == provider
             and _is_usable_key(m.api_key, provider)
         ]
-        if category:
+        if category and not _category_matches_group(group, category):
             cat_members = [m for m in enabled_members if m.api_key.category == category]
             if cat_members:
                 enabled_members = cat_members
@@ -311,24 +341,22 @@ def _pick_from_group(db: Session, user_id: int, provider: str, category: str = N
             continue
             
         if group.strategy == "fallback":
-            # Pick highest priority (lowest number)
             sorted_members = sorted(enabled_members, key=lambda m: m.priority)
-            return sorted_members[0].api_key
         elif group.strategy == "round-robin":
-            # Round-robin based on total usage count (least used first)
-            from sqlalchemy import func
-            member_usage = []
-            for m in enabled_members:
-                count = db.query(func.count(models.ApiUsageLog.id)).filter(
-                    models.ApiUsageLog.api_key_id == m.api_key_id
-                ).scalar() or 0
-                member_usage.append((m, count))
-            member_usage.sort(key=lambda x: x[1])
-            return member_usage[0][0].api_key
+            sorted_members = sorted(enabled_members, key=lambda m: _usage_count(db, m.api_key_id))
         else:  # random
-            return rng.choice(enabled_members).api_key
+            sorted_members = enabled_members[:]
+            rng.shuffle(sorted_members)
+
+        for member in sorted_members:
+            add_key(member.api_key)
     
-    return None
+    return output
+
+
+def _pick_from_group(db: Session, user_id: int, provider: str, category: str = None) -> models.ApiKey:
+    candidates = _candidate_keys_from_groups(db, user_id, provider, category)
+    return candidates[0] if candidates else None
 
 def _is_usable_key(api_key: models.ApiKey, provider: str) -> bool:
     status = (api_key.status or "").lower()
@@ -368,6 +396,26 @@ def get_active_key(db: Session, user_id: int, provider: str, category: str = Non
     return key
 
 
+def get_candidate_keys(db: Session, user_id: int, provider: str, category: str = None) -> list[models.ApiKey]:
+    candidates = _candidate_keys_from_groups(db, user_id, provider, category)
+    seen = {key.id for key in candidates}
+
+    def add_direct(keys: list[models.ApiKey]) -> None:
+        for key in keys:
+            if key.id not in seen and _is_usable_key(key, provider):
+                seen.add(key.id)
+                candidates.append(key)
+
+    query = db.query(models.ApiKey).filter(
+        models.ApiKey.user_id == user_id,
+        models.ApiKey.provider == provider,
+    )
+    if category:
+        add_direct(query.filter(models.ApiKey.category == category).all())
+    add_direct(query.all())
+    return candidates
+
+
 def _active_key_material(user_id: int, provider: str, category: str = None) -> dict | None:
     db = GatewaySessionLocal()
     try:
@@ -379,6 +427,21 @@ def _active_key_material(user_id: int, provider: str, category: str = None) -> d
             "name": api_key.name,
             "plaintext": decrypt_value(api_key.encrypted_key),
         }
+    finally:
+        db.close()
+
+
+def _active_key_materials(user_id: int, provider: str, category: str = None) -> list[dict]:
+    db = GatewaySessionLocal()
+    try:
+        return [
+            {
+                "id": api_key.id,
+                "name": api_key.name,
+                "plaintext": decrypt_value(api_key.encrypted_key),
+            }
+            for api_key in get_candidate_keys(db, user_id, provider, category)
+        ]
     finally:
         db.close()
 
@@ -422,14 +485,12 @@ async def _proxy_gateway_request(
     provider = provider.lower()
     
     category = request.headers.get("X-Project-Category")
-    key_material = await asyncio.to_thread(_active_key_material, user_id, provider, category)
-    if not key_material:
+    key_materials = await asyncio.to_thread(_active_key_materials, user_id, provider, category)
+    if not key_materials:
         raise HTTPException(status_code=404, detail=f"No active API key found for provider: {provider}")
 
-    plaintext_key = key_material["plaintext"]
-    
-    headers = _filtered_forward_headers(request)
-    query_params = dict(request.query_params)
+    base_headers = _filtered_forward_headers(request)
+    base_query_params = dict(request.query_params)
     
     # ── UNIVERSAL PROVIDER MAPPING ──
     provider_urls = {
@@ -451,20 +512,6 @@ async def _proxy_gateway_request(
         
     base_url = provider_urls[provider]
     
-    # Configure Authentication per provider
-    if provider == "gemini":
-        query_params["key"] = plaintext_key
-    elif provider == "anthropic":
-        headers["x-api-key"] = plaintext_key
-    else:
-        # OpenAI, DeepSeek, Groq, Mistral, xAI, Cohere, HuggingFace, OpenRouter
-        # all use standard Bearer token format natively.
-        headers["Authorization"] = f"Bearer {plaintext_key}"
-
-    if provider == "openrouter":
-        headers.setdefault("HTTP-Referer", "https://news-intel.local")
-        headers.setdefault("X-Title", "News-Intel via Cloud Command")
-
     body = await request.body()
 
     # ── Gemini smart-route ──
@@ -504,94 +551,85 @@ async def _proxy_gateway_request(
     else:
         target_url = f"{base_url}/"
     
-    client = httpx.AsyncClient(timeout=60.0)
-    
-    req = client.build_request(
-        method=request.method,
-        url=target_url,
-        params=query_params,
-        headers=headers,
-        content=body
-    )
-    
-    try:
-        resp = await client.send(req, stream=True)
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"Proxy error: {str(e)}")
-    
-    content_type = resp.headers.get("content-type", "")
-    is_stream = "text/event-stream" in content_type or "application/x-ndjson" in content_type
+    retry_statuses = {401, 403, 402, 408, 409, 425, 429, 500, 502, 503, 504}
+    last_proxy_error = None
 
-    if not is_stream:
-        resp_bytes = await resp.aread()
-        await client.aclose()
-        tracked_tokens = 0
+    for index, key_material in enumerate(key_materials):
+        plaintext_key = key_material["plaintext"]
+        headers = dict(base_headers)
+        query_params = dict(base_query_params)
+
+        if provider == "gemini":
+            query_params["key"] = plaintext_key
+        elif provider == "anthropic":
+            headers["x-api-key"] = plaintext_key
+        else:
+            headers["Authorization"] = f"Bearer {plaintext_key}"
+
+        if provider == "openrouter":
+            headers.setdefault("HTTP-Referer", "https://news-intel.local")
+            headers.setdefault("X-Title", "News-Intel via Cloud Command")
+
+        client = httpx.AsyncClient(timeout=60.0)
+        req = client.build_request(
+            method=request.method,
+            url=target_url,
+            params=query_params,
+            headers=headers,
+            content=body,
+        )
+
         try:
-            if "application/json" in content_type:
-                data = json.loads(resp_bytes)
-                # Standard OpenAI compatibility shape (Groq, DeepSeek, Mistral, xAI, OpenRouter use this)
-                if "usage" in data:
-                    if "total_tokens" in data["usage"]:
-                        tracked_tokens = data["usage"]["total_tokens"]
-                    elif "input_tokens" in data["usage"]:
-                        # Anthropic uses input_tokens + output_tokens inside usage
-                        tracked_tokens = data["usage"].get("input_tokens", 0) + data["usage"].get("output_tokens", 0)
-                elif provider == "gemini" and "usageMetadata" in data:
-                    tracked_tokens = data["usageMetadata"].get("totalTokenCount", 0)
-        except Exception:
-            pass
+            resp = await client.send(req, stream=True)
+        except httpx.RequestError as e:
+            await client.aclose()
+            last_proxy_error = str(e)
+            background_tasks.add_task(
+                _log_api_usage_safe,
+                key_material["id"],
+                0,
+                502,
+                True,
+                key_material["name"],
+                str(e)[:500],
+            )
+            if index < len(key_materials) - 1:
+                continue
+            raise HTTPException(status_code=502, detail=f"Proxy error: {str(e)}")
 
-        # Hugging Face inference responses typically don't include usage metadata.
-        if tracked_tokens == 0 and provider == "huggingface":
-            tracked_tokens = _estimate_huggingface_tokens(body, resp_bytes)
+        content_type = resp.headers.get("content-type", "")
+        is_stream = "text/event-stream" in content_type or "application/x-ndjson" in content_type
 
-        error_message = None
-        if resp.status_code >= 400:
+        if not is_stream:
+            resp_bytes = await resp.aread()
+            await client.aclose()
+            tracked_tokens = 0
             try:
-                error_message = resp_bytes.decode('utf-8', errors='ignore')
-                if len(error_message) > 500:
-                    error_message = error_message[:500] + "..."
+                if "application/json" in content_type:
+                    data = json.loads(resp_bytes)
+                    if "usage" in data:
+                        if "total_tokens" in data["usage"]:
+                            tracked_tokens = data["usage"]["total_tokens"]
+                        elif "input_tokens" in data["usage"]:
+                            tracked_tokens = data["usage"].get("input_tokens", 0) + data["usage"].get("output_tokens", 0)
+                    elif provider == "gemini" and "usageMetadata" in data:
+                        tracked_tokens = data["usageMetadata"].get("totalTokenCount", 0)
             except Exception:
                 pass
-            
-        background_tasks.add_task(
-            _log_api_usage_safe,
-            key_material["id"],
-            tracked_tokens,
-            resp.status_code,
-            resp.status_code >= 400,
-            key_material["name"],
-            error_message,
-        )
-            
-        filtered_headers = {k: v for k, v in resp.headers.items() if k.lower() not in ("content-length", "content-encoding")}
-        return Response(content=resp_bytes, status_code=resp.status_code, headers=filtered_headers)
 
-    # Streaming block
-    async def stream_generator():
-        tracked_tokens = 0
-        try:
-            async for chunk in resp.aiter_bytes():
-                try:
-                    chunk_str = chunk.decode('utf-8', errors='ignore')
-                    if provider == "gemini" and "usageMetadata" in chunk_str:
-                        match = re.search(r'"totalTokenCount":\s*(\d+)', chunk_str)
-                        if match:
-                            tracked_tokens = max(tracked_tokens, int(match.group(1)))
-                    elif "usage" in chunk_str:
-                        match = re.search(r'"total_tokens":\s*(\d+)', chunk_str)
-                        if match:
-                            tracked_tokens = max(tracked_tokens, int(match.group(1)))
-                except:
-                    pass
-                yield chunk
-        finally:
-            await client.aclose()
-            
+            if tracked_tokens == 0 and provider == "huggingface":
+                tracked_tokens = _estimate_huggingface_tokens(body, resp_bytes)
+
             error_message = None
             if resp.status_code >= 400:
-                error_message = f"Stream failed with status {resp.status_code}"
-            await asyncio.to_thread(
+                try:
+                    error_message = resp_bytes.decode("utf-8", errors="ignore")
+                    if len(error_message) > 500:
+                        error_message = error_message[:500] + "..."
+                except Exception:
+                    pass
+
+            background_tasks.add_task(
                 _log_api_usage_safe,
                 key_material["id"],
                 tracked_tokens,
@@ -601,8 +639,49 @@ async def _proxy_gateway_request(
                 error_message,
             )
 
-    resp_headers = {k: v for k, v in resp.headers.items() if k.lower() not in ("content-length", "content-encoding")}
-    return StreamingResponse(stream_generator(), status_code=resp.status_code, headers=resp_headers)
+            if resp.status_code in retry_statuses and index < len(key_materials) - 1:
+                continue
+
+            filtered_headers = {k: v for k, v in resp.headers.items() if k.lower() not in ("content-length", "content-encoding")}
+            return Response(content=resp_bytes, status_code=resp.status_code, headers=filtered_headers)
+
+        async def stream_generator():
+            tracked_tokens = 0
+            try:
+                async for chunk in resp.aiter_bytes():
+                    try:
+                        chunk_str = chunk.decode("utf-8", errors="ignore")
+                        if provider == "gemini" and "usageMetadata" in chunk_str:
+                            match = re.search(r'"totalTokenCount":\s*(\d+)', chunk_str)
+                            if match:
+                                tracked_tokens = max(tracked_tokens, int(match.group(1)))
+                        elif "usage" in chunk_str:
+                            match = re.search(r'"total_tokens":\s*(\d+)', chunk_str)
+                            if match:
+                                tracked_tokens = max(tracked_tokens, int(match.group(1)))
+                    except Exception:
+                        pass
+                    yield chunk
+            finally:
+                await client.aclose()
+
+                error_message = None
+                if resp.status_code >= 400:
+                    error_message = f"Stream failed with status {resp.status_code}"
+                await asyncio.to_thread(
+                    _log_api_usage_safe,
+                    key_material["id"],
+                    tracked_tokens,
+                    resp.status_code,
+                    resp.status_code >= 400,
+                    key_material["name"],
+                    error_message,
+                )
+
+        resp_headers = {k: v for k, v in resp.headers.items() if k.lower() not in ("content-length", "content-encoding")}
+        return StreamingResponse(stream_generator(), status_code=resp.status_code, headers=resp_headers)
+
+    raise HTTPException(status_code=502, detail=f"Proxy error: {last_proxy_error or 'all provider keys failed'}")
 
 
 @router.api_route("/huggingface/{path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
