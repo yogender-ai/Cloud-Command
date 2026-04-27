@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import {
   getMonitors, getApiKeySummary, getRenderAccounts,
-  getVercelAccounts, recordVisit, getVisits, getMe, ensureBackendAwake
+  getVercelAccounts, recordVisit, getVisits, getProfile, ensureBackendAwake
 } from '../api';
 import InfraPulseRing from '../components/dashboard/InfraPulseRing';
 import WhatChanged from '../components/dashboard/WhatChanged';
@@ -48,7 +48,7 @@ export default function Dashboard() {
     recordVisit();
     const r = await Promise.allSettled([
       getMonitors(), getApiKeySummary(), getRenderAccounts(),
-      getVercelAccounts(), getVisits(), getMe(),
+      getVercelAccounts(), getVisits(), getProfile(),
     ]);
     const v = (i, fb) => r[i].status === 'fulfilled' ? r[i].value : fb;
     setMonitors(v(0, []));
