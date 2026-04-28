@@ -22,6 +22,28 @@ function formatAgo(dateStr) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+function statusTone(status) {
+  if (status === 'SUCCESS') return 'badge-up';
+  if (status === 'FAILED') return 'badge-down';
+  return 'badge-warning';
+}
+
+function statusIcon(status) {
+  if (status === 'SUCCESS') return <CheckCircle2 size={10} />;
+  if (status === 'FAILED') return <XCircle size={10} />;
+  return <Clock size={10} />;
+}
+
+function prettyPreview(text) {
+  if (!text) return '';
+  try {
+    const parsed = JSON.parse(text);
+    return JSON.stringify(parsed, null, 2).slice(0, 700);
+  } catch {
+    return text.slice(0, 700);
+  }
+}
+
 const emptyForm = {
   name: '',
   category: '',
@@ -194,9 +216,8 @@ export default function ScheduledJobs() {
       ) : (
         <div className="grid grid-2">
           {jobs.map((job) => {
-            const ok = job.status === 'SUCCESS';
-            const failed = job.status === 'FAILED';
             const jobLogs = logs[job.id] || [];
+            const latestPreview = jobLogs[0]?.response_preview || '';
             return (
               <motion.div key={job.id} className="card service-card" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
                 <div className="service-card-header">
@@ -206,8 +227,8 @@ export default function ScheduledJobs() {
                       <span className={`badge ${job.is_enabled ? 'badge-up' : 'badge-neutral'}`}>
                         {job.is_enabled ? 'Enabled' : 'Paused'}
                       </span>
-                      <span className={`badge ${ok ? 'badge-up' : failed ? 'badge-down' : 'badge-warning'}`}>
-                        {ok ? <CheckCircle2 size={10} /> : failed ? <XCircle size={10} /> : <Clock size={10} />}
+                      <span className={`badge ${statusTone(job.status)}`}>
+                        {statusIcon(job.status)}
                         {job.status}
                       </span>
                       <span>{Math.round(job.interval_seconds / 60)}m interval</span>
@@ -235,6 +256,11 @@ export default function ScheduledJobs() {
                   </div>
                 </div>
                 {job.last_error && <div className="auth-error" style={{ margin: 0 }}>{job.last_error}</div>}
+                {latestPreview && job.status !== 'SUCCESS' && (
+                  <pre className="auth-error" style={{ margin: 0, whiteSpace: 'pre-wrap', color: 'var(--accent-amber)' }}>
+                    {prettyPreview(latestPreview)}
+                  </pre>
+                )}
                 <div className="table-wrapper" style={{ maxHeight: 220, overflow: 'auto' }}>
                   <table className="table">
                     <thead><tr><th>Time</th><th>Status</th><th>HTTP</th><th>Latency</th></tr></thead>
@@ -242,7 +268,7 @@ export default function ScheduledJobs() {
                       {jobLogs.slice(0, 6).map((log) => (
                         <tr key={log.id}>
                           <td>{formatAgo(log.created_at)}</td>
-                          <td><span className={`badge badge-sm ${log.status === 'SUCCESS' ? 'badge-up' : 'badge-down'}`}>{log.status}</span></td>
+                          <td><span className={`badge badge-sm ${statusTone(log.status)}`}>{log.status}</span></td>
                           <td>{log.status_code || '-'}</td>
                           <td>{log.latency_ms ? `${log.latency_ms}ms` : '-'}</td>
                         </tr>

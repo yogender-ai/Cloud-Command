@@ -22,6 +22,31 @@ def _coerce_aware(dt):
     return dt.astimezone(timezone.utc)
 
 
+def _classify_response_status(status_code: int | None, response_text: str | None) -> tuple[str, str | None]:
+    if status_code is not None and status_code >= 400:
+        return "FAILED", (response_text or "")[:500]
+
+    try:
+        payload = json.loads(response_text or "{}")
+    except Exception:
+        payload = {}
+
+    app_status = ""
+    if isinstance(payload, dict):
+        app_status = str(payload.get("status") or "").lower()
+        result = payload.get("result")
+        if not app_status and isinstance(result, dict):
+            app_status = str(result.get("status") or "").lower()
+
+    if app_status in {"deferred", "ai_deferred"}:
+        return "DEFERRED", None
+    if app_status in {"skipped", "idle"}:
+        return app_status.upper(), None
+    if app_status in {"failed", "error"}:
+        return "FAILED", (response_text or "")[:500]
+    return "SUCCESS", None
+
+
 async def run_scheduled_job(job_id: int) -> None:
     job_data = await asyncio.to_thread(_load_scheduled_job, job_id)
     if not job_data:
@@ -43,9 +68,7 @@ async def run_scheduled_job(job_id: int) -> None:
             )
         status_code = response.status_code
         response_preview = response.text[:1000]
-        if response.status_code >= 400:
-            status = "FAILED"
-            error = response_preview[:500]
+        status, error = _classify_response_status(response.status_code, response.text)
     except Exception as exc:
         status = "FAILED"
         error = str(exc)[:500]
