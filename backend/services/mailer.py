@@ -3,13 +3,7 @@ Cloud Command — Premium Email Service
 Beautiful dark-themed HTML emails for all notifications.
 """
 
-import smtplib
-import socket
-import threading
-from contextlib import contextmanager
 from email.utils import formataddr
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import httpx
 from config import settings
 
@@ -18,26 +12,6 @@ BRAND_GREEN = "#10b981"
 BRAND_RED = "#f43f5e"
 BRAND_AMBER = "#f59e0b"
 APP_URL = "https://cloud-command.vercel.app"
-_SMTP_DNS_LOCK = threading.Lock()
-
-
-def _mail_error_message(exc: Exception) -> str:
-    if isinstance(exc, smtplib.SMTPAuthenticationError):
-        return "Gmail rejected the SMTP login. Use a Gmail App Password and check SMTP_EMAIL/SMTP_PASSWORD."
-    if isinstance(exc, OSError) and getattr(exc, "errno", None) in {101, 10051}:
-        return (
-            "SMTP network is unreachable from Render. The app now forces IPv4 for Gmail SMTP; "
-            "if this still fails, Render is blocking outbound SMTP ports 465/587 for this instance."
-        )
-    if isinstance(exc, (TimeoutError, socket.timeout)):
-        return "Gmail SMTP timed out while sending the OTP. Retry once; if it keeps happening, check Render outbound network/logs."
-    if isinstance(exc, OSError) and "timed out" in str(exc).lower():
-        return "Gmail SMTP timed out while sending the OTP. Retry once; if it keeps happening, check Render outbound network/logs."
-    return f"SMTP delivery failed: {exc}"
-
-
-def _api_error_message(exc: Exception) -> str:
-    return f"Email API delivery failed: {exc}"
 
 
 def get_last_mail_error() -> str:
@@ -45,47 +19,7 @@ def get_last_mail_error() -> str:
 
 
 def _from_header() -> str:
-    from_email = settings.MAIL_FROM_EMAIL or settings.SMTP_EMAIL
-    return formataddr((settings.MAIL_FROM_NAME, from_email)) if from_email else settings.MAIL_FROM_NAME
-
-
-@contextmanager
-def _smtp_dns_policy():
-    """Prefer IPv4 for SMTP because some Render instances have no usable IPv6 route."""
-    if not settings.SMTP_FORCE_IPV4:
-        yield
-        return
-
-    original_getaddrinfo = socket.getaddrinfo
-
-    def getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
-        if str(host).lower() == settings.SMTP_HOST.lower():
-            family = socket.AF_INET
-        return original_getaddrinfo(host, port, family, type, proto, flags)
-
-    with _SMTP_DNS_LOCK:
-        socket.getaddrinfo = getaddrinfo
-        try:
-            yield
-        finally:
-            socket.getaddrinfo = original_getaddrinfo
-
-
-def _send_gmail_ssl(msg: MIMEMultipart):
-    with _smtp_dns_policy():
-        with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_SSL_PORT, timeout=30) as server:
-            server.login(settings.SMTP_EMAIL, settings.SMTP_PASSWORD)
-            server.send_message(msg)
-
-
-def _send_gmail_starttls(msg: MIMEMultipart):
-    with _smtp_dns_policy():
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_STARTTLS_PORT, timeout=30) as server:
-            server.ehlo()
-            server.starttls()
-            server.ehlo()
-            server.login(settings.SMTP_EMAIL, settings.SMTP_PASSWORD)
-            server.send_message(msg)
+    return formataddr((settings.MAIL_FROM_NAME, settings.MAIL_FROM_EMAIL))
 
 
 def _send_resend_email(to: str, subject: str, html_body: str):
@@ -159,47 +93,24 @@ def _base_template(content: str, accent: str = BRAND_COLOR) -> str:
 
 
 def _send_email(to: str, subject: str, html_body: str) -> bool:
-    """Send an HTML email via an HTTPS email API, then SMTP as a fallback."""
-    has_resend = bool(settings.RESEND_API_KEY and settings.MAIL_FROM_EMAIL)
-    has_smtp = bool(settings.SMTP_EMAIL and settings.SMTP_PASSWORD)
-    if not has_resend and not has_smtp:
+    """Send an HTML email via Resend's HTTPS API."""
+    if not settings.RESEND_API_KEY or not settings.MAIL_FROM_EMAIL:
         _send_email.last_error = (
-            "Email delivery is not configured. Add RESEND_API_KEY and MAIL_FROM_EMAIL, "
-            "or SMTP_EMAIL and SMTP_PASSWORD on a paid host with SMTP ports open."
+            "Resend email delivery is not configured. Add RESEND_API_KEY and MAIL_FROM_EMAIL "
+            "in the backend environment."
         )
-        print(f"[MAIL] Skipping - no email provider configured. Would send to {to}: {subject}")
+        print(f"[MAIL] Skipping - Resend not configured. Would send to {to}: {subject}")
         return False
 
-    attempts = []
-    if has_resend:
-        attempts.append(("Resend API", lambda: _send_resend_email(to, subject, html_body), _api_error_message))
-
-    if has_smtp:
-        msg = MIMEMultipart("alternative")
-        msg["From"] = _from_header()
-        msg["To"] = to
-        msg["Subject"] = subject
-        msg.attach(MIMEText(html_body, "html"))
-        attempts.extend(
-            (
-                (f"SSL {settings.SMTP_SSL_PORT}", lambda: _send_gmail_ssl(msg), _mail_error_message),
-                (f"STARTTLS {settings.SMTP_STARTTLS_PORT}", lambda: _send_gmail_starttls(msg), _mail_error_message),
-            )
-        )
-
-    errors = []
-    for label, sender, error_formatter in attempts:
-        try:
-            sender()
-            _send_email.last_error = ""
-            print(f"[MAIL] Sent via {label} to {to}: {subject}")
-            return True
-        except Exception as e:
-            errors.append(f"{label}: {error_formatter(e)}")
-            print(f"[MAIL] Failed via {label} to {to}: {e}")
-
-    _send_email.last_error = " | ".join(errors)
-    return False
+    try:
+        _send_resend_email(to, subject, html_body)
+        _send_email.last_error = ""
+        print(f"[MAIL] Sent via Resend API to {to}: {subject}")
+        return True
+    except Exception as e:
+        _send_email.last_error = f"Resend delivery failed: {e}"
+        print(f"[MAIL] Failed via Resend API to {to}: {e}")
+        return False
 
 def send_otp_email(to: str, code: str, purpose: str = "verification") -> bool:
     """Send a premium OTP email for email verification or vault unlock."""
