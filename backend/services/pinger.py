@@ -12,6 +12,7 @@ Key design decisions:
 import asyncio
 import httpx
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from sqlalchemy.orm import Session
 
 from database import SessionLocal
@@ -39,6 +40,27 @@ _consecutive_failures: dict[int, int] = {}
 FAILURES_BEFORE_DOWN = 2  # require this many consecutive failures to mark DOWN
 
 
+def _is_hugging_face_url(url: str) -> bool:
+    parsed = urlparse(url.lower())
+    host = parsed.netloc
+    return host.endswith("hf.space") or (
+        host == "huggingface.co" and parsed.path.startswith("/spaces/")
+    )
+
+
+def _classify_response(url: str, status_code: int, body: str = "") -> str:
+    if _is_hugging_face_url(url):
+        lowered = body.lower()
+        if status_code == 503:
+            return "AWAKENING"
+        if "sleeping" in lowered or '"stage":"sleeping"' in lowered or "'stage':'sleeping'" in lowered:
+            return "SLEEPING"
+
+    if status_code < 500:
+        return "UP"
+    return "DOWN"
+
+
 async def ping_url(client: httpx.AsyncClient, url: str) -> tuple[str, int]:
     """
     Ping a URL using HEAD first, then GET on failure.
@@ -51,7 +73,7 @@ async def ping_url(client: httpx.AsyncClient, url: str) -> tuple[str, int]:
     """
     loop = asyncio.get_event_loop()
 
-    is_hf_space = "hf.space" in url.lower()
+    is_hf_space = _is_hugging_face_url(url)
 
     # --- Attempt HEAD first (unless it's a Hugging Face space) ---
     if not is_hf_space:
@@ -64,9 +86,7 @@ async def ping_url(client: httpx.AsyncClient, url: str) -> tuple[str, int]:
             if resp.status_code == 405:
                 raise httpx.HTTPStatusError("HEAD not allowed", request=resp.request, response=resp)
 
-            if resp.status_code < 500:
-                return "UP", latency
-            return "DOWN", latency
+            return _classify_response(url, resp.status_code), latency
 
         except (httpx.HTTPStatusError, Exception):
             pass  # fall through to GET
@@ -78,11 +98,7 @@ async def ping_url(client: httpx.AsyncClient, url: str) -> tuple[str, int]:
         resp = await client.get(url, headers=HEADERS)
         latency = int((loop.time() - start) * 1000)
 
-        if resp.status_code < 500:
-            return "UP", latency
-        if is_hf_space and resp.status_code == 503:
-            return "AWAKENING", latency
-        return "DOWN", latency
+        return _classify_response(url, resp.status_code, resp.text[:20000]), latency
 
     except httpx.TimeoutException:
         return "DOWN", 0
@@ -142,9 +158,9 @@ def _save_ping_results(due, results, now):
                     status = monitor_data["status"]
                 else:
                     status = "DOWN"
-            elif raw_status == "AWAKENING":
+            elif raw_status in {"AWAKENING", "SLEEPING"}:
                 _consecutive_failures[monitor_id] = 0
-                status = "AWAKENING"
+                status = raw_status
             else:
                 _consecutive_failures[monitor_id] = 0
                 status = "UP"
