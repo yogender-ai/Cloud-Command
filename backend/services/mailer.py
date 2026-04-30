@@ -79,7 +79,7 @@ def _send_email(to: str, subject: str, html_body: str) -> bool:
     msg.attach(MIMEText(html_body, "html"))
 
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=12) as server:
             server.login(settings.SMTP_EMAIL, settings.SMTP_PASSWORD)
             server.send_message(msg)
         print(f"[MAIL] Sent to {to}: {subject}")
