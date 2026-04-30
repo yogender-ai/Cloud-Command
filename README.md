@@ -85,8 +85,8 @@ Open [http://localhost:5173](http://localhost:5173)
 | `DATABASE_URL` | ✅ | PostgreSQL connection string (Neon recommended) |
 | `JWT_SECRET` | ✅ | Random string for JWT signing |
 | `ENCRYPTION_KEY` | ✅ | Fernet key for encrypting API tokens |
-| `SMTP_EMAIL` | Optional | Gmail address for alerts |
-| `SMTP_PASSWORD` | Optional | Gmail App Password |
+| `SMTP_EMAIL` | Recommended | Gmail address for alerts and OTP emails |
+| `SMTP_PASSWORD` | Recommended | Gmail App Password; normal Gmail passwords will fail |
 | `RENDER_EXTERNAL_URL` | Optional | Self-ping URL for free tier keepalive |
 
 Generate an encryption key:

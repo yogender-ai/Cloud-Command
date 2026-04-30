@@ -10,6 +10,8 @@ import { toast } from 'sonner';
 import { removeToken } from '../auth';
 import { requestOtp, verifyOtp, getProfile, changePassword, getGatewayKeys, createGatewayKey, deleteGatewayKey } from '../api';
 
+const apiError = (err, fallback) => err.response?.data?.detail || err.message || fallback;
+
 // Password strength calculator
 function getStrength(pw) {
   if (!pw) return { score: 0, label: '', color: 'var(--border)' };
@@ -88,7 +90,7 @@ export default function SettingsPage() {
   const handleRequestOtp = async (e) => {
     e.preventDefault(); setNotifLoading(true);
     try { await requestOtp(notifEmail); toast.success(`OTP sent to ${notifEmail}`); setOtpStep(2); }
-    catch (err) { toast.error(err.response?.data?.detail || 'Failed to send OTP'); }
+    catch (err) { toast.error(apiError(err, 'Failed to send OTP')); }
     finally { setNotifLoading(false); }
   };
 
@@ -123,7 +125,7 @@ export default function SettingsPage() {
       setShowCreateKey(false);
       loadGatewayKeys();
     } catch (err) {
-      toast.error('Failed to create Gateway API Key');
+      toast.error(apiError(err, 'Failed to create Gateway API Key'));
     } finally {
       setCreatingKey(false);
     }

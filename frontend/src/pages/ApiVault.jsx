@@ -21,7 +21,7 @@ import { CategoryEditor } from '../components/CategoryEditor';
 
 const PROVIDERS = ['OpenAI', 'Anthropic', 'Gemini', 'DeepSeek', 'HuggingFace', 'Groq', 'Mistral', 'xAI', 'Cohere', 'OpenRouter', 'Other'];
 const VAULT_LOCK_MS = 15 * 60 * 1000;
-const POLL_INTERVAL = 8000; // 8 second live refresh
+const POLL_INTERVAL = 30000; // keep the vault responsive while still refreshing analytics
 const TIME_RANGES = [
   { key: '1h', label: '1 Hour' },
   { key: '1d', label: '1 Day' },
@@ -32,6 +32,8 @@ const TIME_RANGES = [
 ];
 const KEY_COLORS = ['#a855f7', '#6366f1', '#10b981', '#f59e0b', '#f43f5e', '#0ea5e9', '#ec4899', '#8b5cf6', '#14b8a6', '#ef4444'];
 const STRATEGIES = ['round-robin', 'fallback', 'random'];
+
+const apiError = (err, fallback) => err.response?.data?.detail || err.message || fallback;
 
 function StatusBadge({ status }) {
   const s = (status || '').toLowerCase();
@@ -256,10 +258,11 @@ export default function ApiVault() {
   // Live polling: refresh analytics without blocking the API key list.
   useEffect(() => {
     pollRef.current = setInterval(() => {
+      if (document.hidden || showAdd || showEdit || showCreateGroup || manageGroup || groupAnalytics || otpSent) return;
       loadSummaryOnly();
     }, POLL_INTERVAL);
     return () => clearInterval(pollRef.current);
-  }, [loadSummaryOnly]);
+  }, [loadSummaryOnly, showAdd, showEdit, showCreateGroup, manageGroup, groupAnalytics, otpSent]);
 
   useEffect(() => {
     loadSummaryOnly();
@@ -277,7 +280,7 @@ export default function ApiVault() {
       setOtpSent(true); setOtpCode('');
       toast.success('OTP sent to your verified email for authorization');
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to send OTP');
+      toast.error(apiError(err, 'Failed to send OTP'));
       setRequireOtpFor(null);
     } finally { setSending(false); }
   };
@@ -315,6 +318,14 @@ export default function ApiVault() {
   };
 
   const attemptAction = (action) => {
+    if (action === 'create_group') {
+      setShowCreateGroup(true);
+      return;
+    }
+    if (action.type === 'manage_group') {
+      setManageGroup(action.group);
+      return;
+    }
     if (vaultUnlocked) {
       if (action === 'add') setShowAdd(true);
       else if (action.type === 'edit') {
@@ -329,9 +340,7 @@ export default function ApiVault() {
          });
          setShowEdit(true);
       }
-      else if (action === 'create_group') setShowCreateGroup(true);
       else if (action.type === 'delete') executeDelete(action.id);
-      else if (action.type === 'manage_group') setManageGroup(action.group);
     } else {
       handleSendOtp(action);
     }
@@ -351,7 +360,7 @@ export default function ApiVault() {
       loadVaultData();
       toast.success('API key added & validated');
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to add key');
+      toast.error(apiError(err, 'Failed to add key'));
     } finally { setAdding(false); }
   };
 
@@ -374,7 +383,7 @@ export default function ApiVault() {
       loadVaultData();
       toast.success('API key updated successfully');
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to update key');
+      toast.error(apiError(err, 'Failed to update key'));
     } finally { setAdding(false); }
   };
 
@@ -382,13 +391,14 @@ export default function ApiVault() {
     e.preventDefault();
     setAdding(true);
     try {
-      await createKeyGroup(groupForm);
+      const created = await createKeyGroup(groupForm);
       setShowCreateGroup(false);
       setGroupForm({ name: '', description: '', strategy: 'round-robin', member_ids: [] });
-      loadVaultData();
+      setGroups(prev => [created, ...prev.filter(g => g.id !== created.id)]);
+      setSummary(prev => prev ? { ...prev, key_groups: [created, ...(prev.key_groups || []).filter(g => g.id !== created.id)] } : prev);
       toast.success('Key group created');
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to create group');
+      toast.error(apiError(err, 'Failed to create group'));
     } finally { setAdding(false); }
   };
 
@@ -403,10 +413,12 @@ export default function ApiVault() {
     if (!confirm('Delete this group? The underlying API keys will NOT be deleted.')) return;
     try {
       await deleteKeyGroup(id);
-      loadVaultData();
+      setGroups(prev => prev.filter(g => g.id !== id));
+      setSummary(prev => prev ? { ...prev, key_groups: (prev.key_groups || []).filter(g => g.id !== id) } : prev);
+      if (manageGroup?.id === id) setManageGroup(null);
       toast.success('Group deleted');
     } catch (err) {
-      toast.error('Failed to delete group');
+      toast.error(apiError(err, 'Failed to delete group'));
     }
   };
 
@@ -431,27 +443,27 @@ export default function ApiVault() {
   
   const handleAddMemberToGroup = async (groupId, keyId) => {
     try {
-      await addGroupMember(groupId, { api_key_id: parseInt(keyId) });
-      loadVaultData();
+      const member = await addGroupMember(groupId, { api_key_id: parseInt(keyId) });
       toast.success('Key added to group');
-      if (manageGroup && manageGroup.id === groupId) {
-        setManageGroup({...manageGroup, members: [...manageGroup.members, { api_key_id: parseInt(keyId) }]});
-      }
+      const appendMember = g => g.id === groupId ? { ...g, members: [...(g.members || []), member] } : g;
+      setGroups(prev => prev.map(appendMember));
+      setSummary(prev => prev ? { ...prev, key_groups: (prev.key_groups || []).map(appendMember) } : prev);
+      if (manageGroup && manageGroup.id === groupId) setManageGroup(appendMember);
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to add member');
+      toast.error(apiError(err, 'Failed to add member'));
     }
   };
   
   const handleRemoveMember = async (groupId, memberId) => {
     try {
       await removeGroupMember(groupId, memberId);
-      loadVaultData();
       toast.success('Key removed from group');
-      if (manageGroup && manageGroup.id === groupId) {
-        setManageGroup({...manageGroup, members: manageGroup.members.filter(m => m.id !== memberId)});
-      }
+      const removeMember = g => g.id === groupId ? { ...g, members: (g.members || []).filter(m => m.id !== memberId) } : g;
+      setGroups(prev => prev.map(removeMember));
+      setSummary(prev => prev ? { ...prev, key_groups: (prev.key_groups || []).map(removeMember) } : prev);
+      if (manageGroup && manageGroup.id === groupId) setManageGroup(removeMember);
     } catch (err) {
-      toast.error('Failed to remove member');
+      toast.error(apiError(err, 'Failed to remove member'));
     }
   };
 

@@ -66,11 +66,11 @@ def _base_template(content: str, accent: str = BRAND_COLOR) -> str:
 </html>"""
 
 
-def _send_email(to: str, subject: str, html_body: str):
+def _send_email(to: str, subject: str, html_body: str) -> bool:
     """Send an HTML email via SMTP."""
     if not settings.SMTP_EMAIL or not settings.SMTP_PASSWORD:
         print(f"[MAIL] Skipping — SMTP not configured. Would send to {to}: {subject}")
-        return
+        return False
 
     msg = MIMEMultipart("alternative")
     msg["From"] = f"Cloud Command <{settings.SMTP_EMAIL}>"
@@ -82,12 +82,14 @@ def _send_email(to: str, subject: str, html_body: str):
         with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
             server.login(settings.SMTP_EMAIL, settings.SMTP_PASSWORD)
             server.send_message(msg)
-        print(f"[MAIL] ✅ Sent to {to}: {subject}")
+        print(f"[MAIL] Sent to {to}: {subject}")
+        return True
     except Exception as e:
         print(f"[MAIL] ❌ Failed to send to {to}: {e}")
+        return False
 
 
-def send_otp_email(to: str, code: str, purpose: str = "verification"):
+def send_otp_email(to: str, code: str, purpose: str = "verification") -> bool:
     """Send a premium OTP email for email verification or vault unlock."""
     purpose_label = "API Vault Unlock" if purpose == "vault" else "Email Verification"
     purpose_desc = (
@@ -127,7 +129,7 @@ def send_otp_email(to: str, code: str, purpose: str = "verification"):
       <a href="{APP_URL}/settings" class="btn">Go to Settings</a>
     </p>
     """
-    _send_email(
+    return _send_email(
         to=to,
         subject=f"🔐 Your Cloud Command code: {code}",
         html_body=_base_template(content, BRAND_COLOR),
