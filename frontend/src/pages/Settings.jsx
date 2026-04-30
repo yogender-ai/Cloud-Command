@@ -70,6 +70,7 @@ export default function SettingsPage() {
   const [creatingKey, setCreatingKey] = useState(false);
   const [revealedKey, setRevealedKey] = useState(null);
   const [revealedGatewayUrl, setRevealedGatewayUrl] = useState('');
+  const [revealedGatewaySecret, setRevealedGatewaySecret] = useState('');
   const [copied, setCopied] = useState(false);
 
   useEffect(() => { 
@@ -123,6 +124,7 @@ export default function SettingsPage() {
       const res = await createGatewayKey({ name: newKeyName });
       setRevealedKey(res.key_value);
       setRevealedGatewayUrl(res.gateway_url || 'https://cloud-command.onrender.com');
+      setRevealedGatewaySecret(res.gateway_secret || res.key_value);
       setNewKeyName('');
       setShowCreateKey(false);
       loadGatewayKeys();
@@ -145,10 +147,11 @@ export default function SettingsPage() {
   };
   
   const handleCopyKey = () => {
-    if (revealedKey) {
-      navigator.clipboard.writeText(revealedKey);
+    const secret = revealedGatewaySecret || revealedKey;
+    if (secret) {
+      navigator.clipboard.writeText(secret);
       setCopied(true);
-      toast.success("Gateway API key copied to clipboard");
+      toast.success("Gateway secret copied to clipboard");
       setTimeout(() => setCopied(false), 2000);
     }
   };
@@ -459,7 +462,21 @@ export default function SettingsPage() {
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Gateway URL</div>
                 <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, wordBreak: 'break-all' }}>{revealedGatewayUrl}</div>
                 <p style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 6 }}>
-                  Apps with the default Cloud Command gateway only need the key.
+                  The gateway secret below includes this URL plus the token.
+                </p>
+              </div>
+
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Gateway Secret</div>
+                <div style={{
+                  background: 'var(--bg-input)', padding: '14px 16px', borderRadius: 12,
+                  fontFamily: 'var(--font-mono)', fontSize: 13, wordBreak: 'break-all',
+                  border: '1px solid var(--accent-emerald)', color: 'var(--text-primary)'
+                }}>
+                  {revealedGatewaySecret || revealedKey}
+                </div>
+                <p style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 6 }}>
+                  Use this one value in connected apps as the gateway secret.
                 </p>
               </div>
 

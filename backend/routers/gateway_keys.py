@@ -3,6 +3,8 @@ from sqlalchemy.orm import Session
 from typing import List
 import secrets
 import hashlib
+import base64
+import json
 
 import models
 import schemas
@@ -13,6 +15,11 @@ router = APIRouter(prefix="/api/gateway-keys", tags=["gateway_keys"])
 
 def _hash_key(key: str) -> str:
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
+
+def _build_gateway_secret(url: str, key: str) -> str:
+    payload = json.dumps({"url": url.rstrip("/"), "key": key}, separators=(",", ":")).encode("utf-8")
+    encoded = base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
+    return f"ccgw-v1.{encoded}"
 
 @router.get("", response_model=List[schemas.GatewayApiKeyResponse])
 def get_gateway_keys(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
@@ -44,6 +51,7 @@ def create_gateway_key(key_in: schemas.GatewayApiKeyCreate, db: Session = Depend
         created_at=new_key.created_at,
         key_value=raw_token,
         gateway_url=settings.GATEWAY_PUBLIC_URL,
+        gateway_secret=_build_gateway_secret(settings.GATEWAY_PUBLIC_URL, raw_token),
     )
 
 @router.delete("/{key_id}")

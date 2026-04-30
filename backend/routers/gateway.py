@@ -264,6 +264,20 @@ def _hash_key(key: str) -> str:
     import hashlib
     return hashlib.sha256(key.encode("utf-8")).hexdigest()
 
+def _extract_gateway_key(secret: str) -> str:
+    if not secret.startswith("ccgw-v1."):
+        return secret
+    try:
+        import base64
+        import json
+
+        encoded = secret.split(".", 1)[1]
+        padded = encoded + ("=" * (-len(encoded) % 4))
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")).decode("utf-8"))
+        return payload.get("key") or secret
+    except Exception:
+        return secret
+
 def verify_gateway_auth(request: Request, db: Session = Depends(get_db)) -> int:
     auth_header = request.headers.get("Authorization")
     custom_header = request.headers.get("X-Gateway-Secret")
@@ -276,7 +290,8 @@ def verify_gateway_auth(request: Request, db: Session = Depends(get_db)) -> int:
         
     if not secret:
         raise HTTPException(status_code=401, detail="Missing Gateway Authentication")
-        
+
+    secret = _extract_gateway_key(secret)
     key_hash = _hash_key(secret)
     gateway_key = db.query(models.GatewayApiKey).filter(models.GatewayApiKey.key_hash == key_hash).first()
     
