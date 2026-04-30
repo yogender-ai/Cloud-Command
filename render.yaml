@@ -18,6 +18,20 @@ services:
         sync: false
       - key: SMTP_PASSWORD
         sync: false
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_SSL_PORT
+        value: 465
+      - key: SMTP_STARTTLS_PORT
+        value: 587
+      - key: SMTP_FORCE_IPV4
+        value: true
+      - key: RESEND_API_KEY
+        sync: false
+      - key: MAIL_FROM_EMAIL
+        sync: false
+      - key: MAIL_FROM_NAME
+        value: Cloud Command
       - key: RENDER_EXTERNAL_URL
         sync: false
       - key: ENABLE_BACKGROUND_PINGER

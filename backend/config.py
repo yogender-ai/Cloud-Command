@@ -22,6 +22,13 @@ class Settings:
 
     SMTP_EMAIL: str = os.getenv("SMTP_EMAIL", "")
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
+    SMTP_HOST: str = os.getenv("SMTP_HOST", "smtp.gmail.com")
+    SMTP_SSL_PORT: int = int(os.getenv("SMTP_SSL_PORT", "465"))
+    SMTP_STARTTLS_PORT: int = int(os.getenv("SMTP_STARTTLS_PORT", "587"))
+    SMTP_FORCE_IPV4: bool = _env_bool("SMTP_FORCE_IPV4", True)
+    RESEND_API_KEY: str = os.getenv("RESEND_API_KEY", "")
+    MAIL_FROM_EMAIL: str = os.getenv("MAIL_FROM_EMAIL", os.getenv("SMTP_EMAIL", ""))
+    MAIL_FROM_NAME: str = os.getenv("MAIL_FROM_NAME", "Cloud Command")
 
     RENDER_EXTERNAL_URL: str = os.getenv("RENDER_EXTERNAL_URL", "")
     GATEWAY_PUBLIC_URL: str = os.getenv(
