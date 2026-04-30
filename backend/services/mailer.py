@@ -30,6 +30,21 @@ def get_last_mail_error() -> str:
     return getattr(_send_email, "last_error", "")
 
 
+def _send_gmail_ssl(msg: MIMEMultipart):
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
+        server.login(settings.SMTP_EMAIL, settings.SMTP_PASSWORD)
+        server.send_message(msg)
+
+
+def _send_gmail_starttls(msg: MIMEMultipart):
+    with smtplib.SMTP("smtp.gmail.com", 587, timeout=30) as server:
+        server.ehlo()
+        server.starttls()
+        server.ehlo()
+        server.login(settings.SMTP_EMAIL, settings.SMTP_PASSWORD)
+        server.send_message(msg)
+
+
 def _base_template(content: str, accent: str = BRAND_COLOR) -> str:
     """Shared premium dark HTML email wrapper."""
     return f"""<!DOCTYPE html>
@@ -94,18 +109,19 @@ def _send_email(to: str, subject: str, html_body: str) -> bool:
     msg["Subject"] = subject
     msg.attach(MIMEText(html_body, "html"))
 
-    try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
-            server.login(settings.SMTP_EMAIL, settings.SMTP_PASSWORD)
-            server.send_message(msg)
-        _send_email.last_error = ""
-        print(f"[MAIL] Sent to {to}: {subject}")
-        return True
-    except Exception as e:
-        _send_email.last_error = _mail_error_message(e)
-        print(f"[MAIL] ❌ Failed to send to {to}: {e}")
-        return False
+    errors = []
+    for label, sender in (("SSL 465", _send_gmail_ssl), ("STARTTLS 587", _send_gmail_starttls)):
+        try:
+            sender(msg)
+            _send_email.last_error = ""
+            print(f"[MAIL] Sent via {label} to {to}: {subject}")
+            return True
+        except Exception as e:
+            errors.append(f"{label}: {_mail_error_message(e)}")
+            print(f"[MAIL] Failed via {label} to {to}: {e}")
 
+    _send_email.last_error = " | ".join(errors)
+    return False
 
 def send_otp_email(to: str, code: str, purpose: str = "verification") -> bool:
     """Send a premium OTP email for email verification or vault unlock."""
