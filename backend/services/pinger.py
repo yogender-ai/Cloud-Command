@@ -55,6 +55,13 @@ def _classify_response(url: str, status_code: int, body: str = "") -> str:
             return "AWAKENING"
         if "sleeping" in lowered or '"stage":"sleeping"' in lowered or "'stage':'sleeping'" in lowered:
             return "SLEEPING"
+        # Generic monitors treat 4xx as reachable, but Hugging Face Space
+        # pages often return 401/403/404 for private or missing Spaces. Calling
+        # those UP makes private/sleeping Space monitors look healthy when the
+        # user cannot actually reach the app.
+        if 200 <= status_code < 400:
+            return "UP"
+        return "DOWN"
 
     if status_code < 500:
         return "UP"
