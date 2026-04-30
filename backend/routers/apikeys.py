@@ -278,11 +278,12 @@ async def recheck_key(
     key.last_checked = datetime.now(timezone.utc)
     db.commit()
     db.refresh(key)
-    if not key:
-        raise HTTPException(status_code=404, detail="API key not found")
-
-    plaintext = decrypt_value(key.encrypted_key)
-    return {"key_value": plaintext}
+    key.tokens_used = (
+        db.query(func.sum(models.ApiUsageLog.tokens_used))
+        .filter(models.ApiUsageLog.api_key_id == key.id)
+        .scalar()
+    ) or 0
+    return key
 
 
 @router.get("/summary")
@@ -297,7 +298,7 @@ def get_summary(
     key_name_map = {k.id: k.name for k in keys}
 
     total = len(keys)
-    active = len([k for k in keys if "active" in k.status.lower()])
+    active = len([k for k in keys if "active" in (k.status or "").lower()])
 
     now = datetime.now()
     today = now.date()
@@ -314,7 +315,7 @@ def get_summary(
     today_agg = db.query(
         func.coalesce(func.sum(models.ApiUsageLog.tokens_used), 0),
         func.count(models.ApiUsageLog.id),
-        func.sum(case((models.ApiUsageLog.is_error == True, 1), else_=0)),
+        func.coalesce(func.sum(case((models.ApiUsageLog.is_error == True, 1), else_=0)), 0),
     ).filter(
         models.ApiUsageLog.api_key_id.in_(key_ids),
         func.date(models.ApiUsageLog.timestamp) == today,
@@ -338,7 +339,7 @@ def get_summary(
         models.ApiUsageLog.api_key_id,
         func.coalesce(func.sum(models.ApiUsageLog.tokens_used), 0),
         func.count(models.ApiUsageLog.id),
-        func.sum(case((models.ApiUsageLog.is_error == True, 1), else_=0)),
+        func.coalesce(func.sum(case((models.ApiUsageLog.is_error == True, 1), else_=0)), 0),
     ).filter(
         models.ApiUsageLog.api_key_id.in_(key_ids),
     ).group_by(models.ApiUsageLog.api_key_id).all()
@@ -418,7 +419,7 @@ def _build_history_daily(db, key_ids, keys, key_name_map, cutoff, today):
         models.ApiUsageLog.api_key_id,
         func.coalesce(func.sum(models.ApiUsageLog.tokens_used), 0),
         func.count(models.ApiUsageLog.id),
-        func.sum(case((models.ApiUsageLog.is_error == True, 1), else_=0)),
+        func.coalesce(func.sum(case((models.ApiUsageLog.is_error == True, 1), else_=0)), 0),
     ).filter(
         models.ApiUsageLog.api_key_id.in_(key_ids),
         func.date(models.ApiUsageLog.timestamp) >= cutoff,
@@ -460,7 +461,7 @@ def _build_history_recent(db, key_ids, keys, key_name_map, cutoff, now, grain):
         models.ApiUsageLog.api_key_id,
         func.coalesce(func.sum(models.ApiUsageLog.tokens_used), 0),
         func.count(models.ApiUsageLog.id),
-        func.sum(case((models.ApiUsageLog.is_error == True, 1), else_=0)),
+        func.coalesce(func.sum(case((models.ApiUsageLog.is_error == True, 1), else_=0)), 0),
     ).filter(
         models.ApiUsageLog.api_key_id.in_(key_ids),
         models.ApiUsageLog.timestamp >= cutoff,

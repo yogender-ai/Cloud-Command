@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, KeyRound, CheckCircle2, XCircle, AlertCircle, RefreshCw,
@@ -178,6 +178,8 @@ export default function ApiVault() {
   const [groups, setGroups] = useState([]);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [analyticsError, setAnalyticsError] = useState('');
   
   // Modals
   const [showAdd, setShowAdd] = useState(false);
@@ -209,38 +211,59 @@ export default function ApiVault() {
   const lockTimerRef = useRef(null);
   const pollRef = useRef(null);
 
-  useEffect(() => {
-    getProfile().then(p => setProfile(p)).catch(() => {});
-    loadVaultData();
+  const loadSummaryOnly = useCallback(async () => {
+    setAnalyticsLoading(true);
+    setAnalyticsError('');
+    try {
+      const s = await getApiKeySummary(timeRange);
+      setSummary(s);
+      if (s.key_groups) setGroups(s.key_groups);
+      return s;
+    } catch (err) {
+      setAnalyticsError(err.response?.data?.detail || 'Usage analytics are temporarily unavailable.');
+      return null;
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  }, [timeRange]);
+
+  const loadKeysOnly = useCallback(async ({ showError = true } = {}) => {
+    try {
+      const k = await getApiKeys();
+      setKeys(Array.isArray(k) ? k : []);
+      return k;
+    } catch (err) {
+      if (showError) {
+        toast.error(err.response?.data?.detail || 'Failed to load API keys');
+      }
+      return null;
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  // Live polling — auto-refresh every 8 seconds
+  const loadVaultData = useCallback(async ({ showKeyError = true } = {}) => {
+    const keysPromise = loadKeysOnly({ showError: showKeyError });
+    const summaryPromise = loadSummaryOnly();
+    await Promise.allSettled([keysPromise, summaryPromise]);
+  }, [loadKeysOnly, loadSummaryOnly]);
+
+  useEffect(() => {
+    getProfile().then(p => setProfile(p)).catch(() => {});
+    loadKeysOnly();
+  }, [loadKeysOnly]);
+
+  // Live polling: refresh analytics without blocking the API key list.
   useEffect(() => {
     pollRef.current = setInterval(() => {
       loadSummaryOnly();
     }, POLL_INTERVAL);
     return () => clearInterval(pollRef.current);
-  }, [timeRange]);
-
-  const loadSummaryOnly = useCallback(async () => {
-    try {
-      const s = await getApiKeySummary(timeRange);
-      setSummary(s);
-      if (s.key_groups) setGroups(s.key_groups);
-    } catch {}
-  }, [timeRange]);
-
-  const loadVaultData = async () => {
-    try {
-      const [k, s] = await Promise.all([getApiKeys(), getApiKeySummary(timeRange)]);
-      setKeys(k); setSummary(s);
-      if (s.key_groups) setGroups(s.key_groups);
-    } catch {} finally { setLoading(false); }
-  };
+  }, [loadSummaryOnly]);
 
   useEffect(() => {
     loadSummaryOnly();
-  }, [timeRange, loadSummaryOnly]);
+  }, [loadSummaryOnly]);
 
   const handleSendOtp = async (action) => {
     if (!profile?.notification_email) {
@@ -432,8 +455,8 @@ export default function ApiVault() {
     }
   };
 
-  const allCategories = [...new Set(keys.map(k => k.category).filter(Boolean))];
-  const categories = ['All', ...allCategories];
+  const allCategories = useMemo(() => [...new Set(keys.map(k => k.category).filter(Boolean))], [keys]);
+  const categories = useMemo(() => ['All', ...allCategories], [allCategories]);
   const filtered = filterCat === 'All' ? keys : keys.filter(k => k.category === filterCat);
 
   if (loading) return <div className="page-container"><div className="loading-screen"><div className="spinner" /><p>Loading API keys...</p></div></div>;
@@ -449,7 +472,21 @@ export default function ApiVault() {
     };
   });
 
-  const perKey = summary?.per_key || [];
+  const perKey = summary?.per_key || keys.map(k => ({
+    id: k.id,
+    name: k.name,
+    provider: k.provider,
+    category: k.category,
+    model_name: k.model_name,
+    masked_key: k.masked_key,
+    daily_request_limit: k.daily_request_limit,
+    daily_token_limit: k.daily_token_limit,
+    total_tokens: k.tokens_used || 0,
+    total_requests: 0,
+    failed_requests: 0,
+    today_tokens: 0,
+    today_requests: 0,
+  }));
   const keyIdToName = Object.fromEntries(perKey.map(k => [k.id, k.name]));
 
   const groupHistory = groupAnalytics ? (summary?.usage_history || []).map(d => {
@@ -612,7 +649,15 @@ export default function ApiVault() {
             boxShadow: timeRange === tr.key ? '0 0 12px rgba(99,102,241,0.15)' : 'none',
           }}>{tr.label}</button>
         ))}
+        {analyticsLoading && <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 6 }}>Updating...</span>}
       </div>
+
+      {analyticsError && (
+        <div style={{ marginBottom: 20, padding: '10px 12px', borderRadius: 8, border: '1px solid rgba(245,158,11,0.25)', background: 'rgba(245,158,11,0.08)', color: 'var(--text-secondary)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <AlertCircle size={14} color="var(--accent-amber)" />
+          <span>{analyticsError} API keys are still shown from the vault list.</span>
+        </div>
+      )}
 
       {/* ── Analytics Grid ── */}
       {processedHistory.length > 0 && (
