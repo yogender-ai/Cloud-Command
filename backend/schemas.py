@@ -213,6 +213,7 @@ class GatewayApiKeyResponse(BaseModel):
 
 class GatewayApiKeyRevealResponse(GatewayApiKeyResponse):
     key_value: str  # The plaintext token (only returned once upon creation)
+    gateway_url: Optional[str] = None
 
 
 # ──────────────────────────────────────

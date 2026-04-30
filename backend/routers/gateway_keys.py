@@ -7,6 +7,7 @@ import hashlib
 import models
 import schemas
 from dependencies import get_db, get_current_user
+from config import settings
 
 router = APIRouter(prefix="/api/gateway-keys", tags=["gateway_keys"])
 
@@ -41,7 +42,8 @@ def create_gateway_key(key_in: schemas.GatewayApiKeyCreate, db: Session = Depend
         prefix=new_key.prefix,
         last_used_at=new_key.last_used_at,
         created_at=new_key.created_at,
-        key_value=raw_token
+        key_value=raw_token,
+        gateway_url=settings.GATEWAY_PUBLIC_URL,
     )
 
 @router.delete("/{key_id}")

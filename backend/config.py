@@ -24,6 +24,10 @@ class Settings:
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
 
     RENDER_EXTERNAL_URL: str = os.getenv("RENDER_EXTERNAL_URL", "")
+    GATEWAY_PUBLIC_URL: str = os.getenv(
+        "GATEWAY_PUBLIC_URL",
+        os.getenv("RENDER_EXTERNAL_URL", "https://cloud-command.onrender.com"),
+    ).rstrip("/")
 
     ENABLE_BACKGROUND_PINGER: bool = _env_bool("ENABLE_BACKGROUND_PINGER", True)
     ENABLE_SCHEDULED_JOBS: bool = _env_bool("ENABLE_SCHEDULED_JOBS", True)

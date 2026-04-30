@@ -4,6 +4,7 @@ Beautiful dark-themed HTML emails for all notifications.
 """
 
 import smtplib
+import socket
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from config import settings
@@ -13,6 +14,20 @@ BRAND_GREEN = "#10b981"
 BRAND_RED = "#f43f5e"
 BRAND_AMBER = "#f59e0b"
 APP_URL = "https://cloud-command.vercel.app"
+
+
+def _mail_error_message(exc: Exception) -> str:
+    if isinstance(exc, smtplib.SMTPAuthenticationError):
+        return "Gmail rejected the SMTP login. Use a Gmail App Password and check SMTP_EMAIL/SMTP_PASSWORD."
+    if isinstance(exc, (TimeoutError, socket.timeout)):
+        return "Gmail SMTP timed out while sending the OTP. Retry once; if it keeps happening, check Render outbound network/logs."
+    if isinstance(exc, OSError) and "timed out" in str(exc).lower():
+        return "Gmail SMTP timed out while sending the OTP. Retry once; if it keeps happening, check Render outbound network/logs."
+    return f"SMTP delivery failed: {exc}"
+
+
+def get_last_mail_error() -> str:
+    return getattr(_send_email, "last_error", "")
 
 
 def _base_template(content: str, accent: str = BRAND_COLOR) -> str:
@@ -69,6 +84,7 @@ def _base_template(content: str, accent: str = BRAND_COLOR) -> str:
 def _send_email(to: str, subject: str, html_body: str) -> bool:
     """Send an HTML email via SMTP."""
     if not settings.SMTP_EMAIL or not settings.SMTP_PASSWORD:
+        _send_email.last_error = "SMTP_EMAIL or SMTP_PASSWORD is missing in the backend environment."
         print(f"[MAIL] Skipping — SMTP not configured. Would send to {to}: {subject}")
         return False
 
@@ -79,12 +95,14 @@ def _send_email(to: str, subject: str, html_body: str) -> bool:
     msg.attach(MIMEText(html_body, "html"))
 
     try:
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=12) as server:
+        with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=30) as server:
             server.login(settings.SMTP_EMAIL, settings.SMTP_PASSWORD)
             server.send_message(msg)
+        _send_email.last_error = ""
         print(f"[MAIL] Sent to {to}: {subject}")
         return True
     except Exception as e:
+        _send_email.last_error = _mail_error_message(e)
         print(f"[MAIL] ❌ Failed to send to {to}: {e}")
         return False
 

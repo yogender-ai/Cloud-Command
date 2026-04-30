@@ -69,6 +69,7 @@ export default function SettingsPage() {
   const [newKeyName, setNewKeyName] = useState('');
   const [creatingKey, setCreatingKey] = useState(false);
   const [revealedKey, setRevealedKey] = useState(null);
+  const [revealedGatewayUrl, setRevealedGatewayUrl] = useState('');
   const [copied, setCopied] = useState(false);
 
   useEffect(() => { 
@@ -121,6 +122,7 @@ export default function SettingsPage() {
     try {
       const res = await createGatewayKey({ name: newKeyName });
       setRevealedKey(res.key_value);
+      setRevealedGatewayUrl(res.gateway_url || 'https://cloud-command.onrender.com');
       setNewKeyName('');
       setShowCreateKey(false);
       loadGatewayKeys();
@@ -450,6 +452,14 @@ export default function SettingsPage() {
                 </p>
                 <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>
                   For security reasons, Cloud Command does not store this key in plain text. You will not be able to see it again after closing this window.
+                </p>
+              </div>
+
+              <div style={{ marginBottom: 14, padding: '12px 14px', background: 'var(--bg-input)', border: '1px solid var(--border)', borderRadius: 10 }}>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 6 }}>Gateway URL</div>
+                <div style={{ fontFamily: 'var(--font-mono)', fontSize: 13, wordBreak: 'break-all' }}>{revealedGatewayUrl}</div>
+                <p style={{ color: 'var(--text-muted)', fontSize: 12, marginTop: 6 }}>
+                  Apps with the default Cloud Command gateway only need the key.
                 </p>
               </div>
 

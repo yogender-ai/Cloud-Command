@@ -46,7 +46,7 @@ def request_vault_otp(
     expires = datetime.now(timezone.utc) + timedelta(minutes=10)
 
     try:
-        from services.mailer import send_otp_email
+        from services.mailer import get_last_mail_error, send_otp_email
         sent = send_otp_email(alert_email, code, purpose="vault")
     except Exception as e:
         print(f"Vault OTP email failed: {e}")
@@ -55,7 +55,7 @@ def request_vault_otp(
     if not sent:
         raise HTTPException(
             status_code=503,
-            detail="Could not send the vault OTP. Check SMTP_EMAIL and SMTP_PASSWORD in Render; Gmail requires an App Password, not your normal password.",
+            detail=f"Could not send the vault OTP. {get_last_mail_error() or 'Check backend mail logs.'}",
         )
 
     otp = models.OTP(user_id=user.id, email=alert_email, code=code, expires_at=expires)

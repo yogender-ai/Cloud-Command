@@ -36,7 +36,7 @@ def request_otp(
     expires = datetime.now(timezone.utc) + timedelta(minutes=10)
 
     try:
-        from services.mailer import send_otp_email
+        from services.mailer import get_last_mail_error, send_otp_email
         sent = send_otp_email(req.email, code)
     except Exception as e:
         print(f"Failed to send OTP email: {e}")
@@ -45,7 +45,7 @@ def request_otp(
     if not sent:
         raise HTTPException(
             status_code=503,
-            detail="Email delivery is not configured or Gmail rejected the SMTP login. Add SMTP_EMAIL and SMTP_PASSWORD as a Gmail App Password in Render, then retry.",
+            detail=f"Could not send OTP. {get_last_mail_error() or 'Check backend mail logs.'}",
         )
 
     otp = models.OTP(user_id=user.id, email=req.email, code=code, expires_at=expires)
