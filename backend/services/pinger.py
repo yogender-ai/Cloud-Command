@@ -11,6 +11,7 @@ Key design decisions:
 
 import asyncio
 import httpx
+import re
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 from sqlalchemy.orm import Session
@@ -38,6 +39,10 @@ HEADERS = {
 # Track consecutive failures per monitor id to avoid immediate false DOWN
 _consecutive_failures: dict[int, int] = {}
 FAILURES_BEFORE_DOWN = 2  # require this many consecutive failures to mark DOWN
+_HF_SPACE_ID_PATTERNS = (
+    re.compile(r'["\']spaceId["\']\s*:\s*["\']([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)["\']', re.IGNORECASE),
+    re.compile(r'huggingface\.co/spaces/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)', re.IGNORECASE),
+)
 
 
 def _is_hugging_face_url(url: str) -> bool:
@@ -46,6 +51,56 @@ def _is_hugging_face_url(url: str) -> bool:
     return host.endswith("hf.space") or (
         host == "huggingface.co" and parsed.path.startswith("/spaces/")
     )
+
+
+def _extract_hf_space_id(url: str, body: str = "") -> str | None:
+    parsed = urlparse(url)
+    host = parsed.netloc.lower()
+
+    if host == "huggingface.co":
+        parts = [part for part in parsed.path.split("/") if part]
+        if len(parts) >= 3 and parts[0].lower() == "spaces":
+            return f"{parts[1]}/{parts[2]}"
+
+    if body:
+        for pattern in _HF_SPACE_ID_PATTERNS:
+            match = pattern.search(body)
+            if match:
+                return match.group(1)
+
+    return None
+
+
+def _classify_hf_runtime_stage(stage: str | None) -> str | None:
+    if not stage:
+        return None
+
+    normalized = str(stage).strip().upper()
+    if normalized in {"RUNNING", "RUNNING_BUILDING", "READY"}:
+        return "UP"
+    if normalized in {"BUILDING", "STARTING", "PREPARING"}:
+        return "AWAKENING"
+    if normalized in {"SLEEPING", "STOPPED"}:
+        return "SLEEPING"
+    if normalized in {"PAUSED", "NO_APP_FILE", "CONFIG_ERROR", "BUILD_ERROR", "RUNTIME_ERROR", "DELETING"}:
+        return "DOWN"
+    return None
+
+
+async def _get_hf_runtime_status(client: httpx.AsyncClient, space_id: str) -> str | None:
+    runtime_url = f"https://huggingface.co/api/spaces/{space_id}/runtime"
+    try:
+        resp = await client.get(runtime_url, headers={"Accept": "application/json", **HEADERS})
+        if resp.status_code >= 400:
+            return None
+        payload = resp.json()
+    except Exception:
+        return None
+
+    stage = payload.get("stage")
+    if stage is None and isinstance(payload.get("runtime"), dict):
+        stage = payload["runtime"].get("stage")
+    return _classify_hf_runtime_stage(stage)
 
 
 def _classify_response(url: str, status_code: int, body: str = "") -> str:
@@ -104,8 +159,16 @@ async def ping_url(client: httpx.AsyncClient, url: str) -> tuple[str, int]:
         # Use a short timeout for GET to avoid hanging on large pages
         resp = await client.get(url, headers=HEADERS)
         latency = int((loop.time() - start) * 1000)
+        body_preview = resp.text[:20000]
 
-        return _classify_response(url, resp.status_code, resp.text[:20000]), latency
+        if is_hf_space:
+            space_id = _extract_hf_space_id(url, body_preview)
+            if space_id:
+                runtime_status = await _get_hf_runtime_status(client, space_id)
+                if runtime_status:
+                    return runtime_status, latency
+
+        return _classify_response(url, resp.status_code, body_preview), latency
 
     except httpx.TimeoutException:
         return "DOWN", 0
