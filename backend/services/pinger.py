@@ -11,6 +11,7 @@ Key design decisions:
 
 import asyncio
 import httpx
+import json
 import re
 from datetime import datetime, timezone
 from urllib.parse import urlparse
@@ -19,6 +20,7 @@ from sqlalchemy.orm import Session
 from database import SessionLocal
 import models
 from config import settings
+from security import decrypt_value
 
 
 # Realistic browser headers to avoid being blocked by CDNs / rate limiters
@@ -43,6 +45,33 @@ _HF_SPACE_ID_PATTERNS = (
     re.compile(r'["\']spaceId["\']\s*:\s*["\']([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)["\']', re.IGNORECASE),
     re.compile(r'huggingface\.co/spaces/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)', re.IGNORECASE),
 )
+_DEFAULT_HF_SPACE_ALIASES = {
+    # News-Intel Space 1 uses the hf.space host in Cloud Command, but the
+    # runtime API needs the canonical repo id to inspect its real status.
+    "yash213kadian-news-intel-hf-space-1": "YAsh213kadian/News_intel_HF_space_1",
+    "yash213kadian-news-intel-hf-space-1.hf.space": "YAsh213kadian/News_intel_HF_space_1",
+}
+
+
+def _load_hf_space_aliases() -> dict[str, str]:
+    raw = getattr(settings, "HF_SPACE_ALIASES_JSON", "") or ""
+    if not raw.strip():
+        return dict(_DEFAULT_HF_SPACE_ALIASES)
+
+    try:
+        payload = json.loads(raw)
+    except Exception:
+        return dict(_DEFAULT_HF_SPACE_ALIASES)
+
+    aliases = dict(_DEFAULT_HF_SPACE_ALIASES)
+    if isinstance(payload, dict):
+        for key, value in payload.items():
+            if isinstance(key, str) and isinstance(value, str) and "/" in value:
+                aliases[key.strip().lower()] = value.strip()
+    return aliases
+
+
+_HF_SPACE_ALIASES = _load_hf_space_aliases()
 
 
 def _is_hugging_face_url(url: str) -> bool:
@@ -56,6 +85,10 @@ def _is_hugging_face_url(url: str) -> bool:
 def _extract_hf_space_id(url: str, body: str = "") -> str | None:
     parsed = urlparse(url)
     host = parsed.netloc.lower()
+    host_slug = host[:-9] if host.endswith(".hf.space") else host
+    alias = _HF_SPACE_ALIASES.get(host) or _HF_SPACE_ALIASES.get(host_slug)
+    if alias:
+        return alias
 
     if host == "huggingface.co":
         parts = [part for part in parsed.path.split("/") if part]
@@ -69,6 +102,36 @@ def _extract_hf_space_id(url: str, body: str = "") -> str | None:
                 return match.group(1)
 
     return None
+
+
+def _is_active_hf_key(api_key: models.ApiKey) -> bool:
+    return "active" in (api_key.status or "").lower()
+
+
+def _get_hf_monitor_token(user_id: int, category: str | None = None) -> str | None:
+    db = SessionLocal()
+    try:
+        query = db.query(models.ApiKey).filter(
+            models.ApiKey.user_id == user_id,
+            models.ApiKey.provider == "huggingface",
+        )
+        candidates = [key for key in query.all() if _is_active_hf_key(key)]
+        if category:
+            normalized = category.strip().lower()
+            category_matches = [
+                key for key in candidates
+                if (key.category or "").strip().lower() == normalized
+            ]
+            if category_matches:
+                candidates = category_matches
+        if not candidates:
+            return None
+        try:
+            return decrypt_value(candidates[0].encrypted_key)
+        except Exception:
+            return None
+    finally:
+        db.close()
 
 
 def _classify_hf_runtime_stage(stage: str | None) -> str | None:
@@ -87,10 +150,17 @@ def _classify_hf_runtime_stage(stage: str | None) -> str | None:
     return None
 
 
-async def _get_hf_runtime_status(client: httpx.AsyncClient, space_id: str) -> str | None:
+async def _get_hf_runtime_status(
+    client: httpx.AsyncClient,
+    space_id: str,
+    hf_token: str | None = None,
+) -> str | None:
     runtime_url = f"https://huggingface.co/api/spaces/{space_id}/runtime"
+    headers = {"Accept": "application/json", **HEADERS}
+    if hf_token:
+        headers["Authorization"] = f"Bearer {hf_token}"
     try:
-        resp = await client.get(runtime_url, headers={"Accept": "application/json", **HEADERS})
+        resp = await client.get(runtime_url, headers=headers)
         if resp.status_code >= 400:
             return None
         payload = resp.json()
@@ -123,7 +193,7 @@ def _classify_response(url: str, status_code: int, body: str = "") -> str:
     return "DOWN"
 
 
-async def ping_url(client: httpx.AsyncClient, url: str) -> tuple[str, int]:
+async def ping_url(client: httpx.AsyncClient, monitor: dict) -> tuple[str, int]:
     """
     Ping a URL using HEAD first, then GET on failure.
     Returns (status_str, latency_ms).
@@ -135,7 +205,15 @@ async def ping_url(client: httpx.AsyncClient, url: str) -> tuple[str, int]:
     """
     loop = asyncio.get_event_loop()
 
+    url = monitor["url"]
     is_hf_space = _is_hugging_face_url(url)
+    hf_token = None
+    if is_hf_space:
+        hf_token = await asyncio.to_thread(
+            _get_hf_monitor_token,
+            monitor["user_id"],
+            monitor.get("category"),
+        )
 
     # --- Attempt HEAD first (unless it's a Hugging Face space) ---
     if not is_hf_space:
@@ -164,7 +242,7 @@ async def ping_url(client: httpx.AsyncClient, url: str) -> tuple[str, int]:
         if is_hf_space:
             space_id = _extract_hf_space_id(url, body_preview)
             if space_id:
-                runtime_status = await _get_hf_runtime_status(client, space_id)
+                runtime_status = await _get_hf_runtime_status(client, space_id, hf_token)
                 if runtime_status:
                     return runtime_status, latency
 
@@ -203,6 +281,7 @@ def _load_due_monitors():
                 "status": monitor.status,
                 "user_id": monitor.user_id,
                 "name": monitor.name,
+                "category": monitor.category,
             })
 
         return due, now
@@ -296,7 +375,7 @@ async def ping_all_monitors():
         limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
     ) as client:
         results = await asyncio.gather(
-            *[ping_url(client, m["url"]) for m in due],
+            *[ping_url(client, m) for m in due],
             return_exceptions=True,
         )
 

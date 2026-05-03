@@ -29,6 +29,7 @@ class Settings:
         "GATEWAY_PUBLIC_URL",
         os.getenv("RENDER_EXTERNAL_URL", "https://cloud-command.onrender.com"),
     ).rstrip("/")
+    HF_SPACE_ALIASES_JSON: str = os.getenv("HF_SPACE_ALIASES_JSON", "")
 
     ENABLE_BACKGROUND_PINGER: bool = _env_bool("ENABLE_BACKGROUND_PINGER", True)
     ENABLE_SCHEDULED_JOBS: bool = _env_bool("ENABLE_SCHEDULED_JOBS", True)
