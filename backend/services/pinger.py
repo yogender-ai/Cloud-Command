@@ -11,8 +11,6 @@ Key design decisions:
 
 import asyncio
 import httpx
-import json
-import re
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 from sqlalchemy.orm import Session
@@ -20,7 +18,6 @@ from sqlalchemy.orm import Session
 from database import SessionLocal
 import models
 from config import settings
-from security import decrypt_value
 
 
 # Realistic browser headers to avoid being blocked by CDNs / rate limiters
@@ -41,37 +38,6 @@ HEADERS = {
 # Track consecutive failures per monitor id to avoid immediate false DOWN
 _consecutive_failures: dict[int, int] = {}
 FAILURES_BEFORE_DOWN = 2  # require this many consecutive failures to mark DOWN
-_HF_SPACE_ID_PATTERNS = (
-    re.compile(r'["\']spaceId["\']\s*:\s*["\']([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)["\']', re.IGNORECASE),
-    re.compile(r'huggingface\.co/spaces/([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)', re.IGNORECASE),
-)
-_DEFAULT_HF_SPACE_ALIASES = {
-    # News-Intel Space 1 uses the hf.space host in Cloud Command, but the
-    # runtime API needs the canonical repo id to inspect its real status.
-    "yash213kadian-news-intel-hf-space-1": "YAsh213kadian/News_intel_HF_space_1",
-    "yash213kadian-news-intel-hf-space-1.hf.space": "YAsh213kadian/News_intel_HF_space_1",
-}
-
-
-def _load_hf_space_aliases() -> dict[str, str]:
-    raw = getattr(settings, "HF_SPACE_ALIASES_JSON", "") or ""
-    if not raw.strip():
-        return dict(_DEFAULT_HF_SPACE_ALIASES)
-
-    try:
-        payload = json.loads(raw)
-    except Exception:
-        return dict(_DEFAULT_HF_SPACE_ALIASES)
-
-    aliases = dict(_DEFAULT_HF_SPACE_ALIASES)
-    if isinstance(payload, dict):
-        for key, value in payload.items():
-            if isinstance(key, str) and isinstance(value, str) and "/" in value:
-                aliases[key.strip().lower()] = value.strip()
-    return aliases
-
-
-_HF_SPACE_ALIASES = _load_hf_space_aliases()
 
 
 def _is_hugging_face_url(url: str) -> bool:
@@ -81,98 +47,6 @@ def _is_hugging_face_url(url: str) -> bool:
         host == "huggingface.co" and parsed.path.startswith("/spaces/")
     )
 
-
-def _extract_hf_space_id(url: str, body: str = "") -> str | None:
-    parsed = urlparse(url)
-    host = parsed.netloc.lower()
-    host_slug = host[:-9] if host.endswith(".hf.space") else host
-    alias = _HF_SPACE_ALIASES.get(host) or _HF_SPACE_ALIASES.get(host_slug)
-    if alias:
-        return alias
-
-    if host == "huggingface.co":
-        parts = [part for part in parsed.path.split("/") if part]
-        if len(parts) >= 3 and parts[0].lower() == "spaces":
-            return f"{parts[1]}/{parts[2]}"
-
-    if body:
-        for pattern in _HF_SPACE_ID_PATTERNS:
-            match = pattern.search(body)
-            if match:
-                return match.group(1)
-
-    return None
-
-
-def _is_active_hf_key(api_key: models.ApiKey) -> bool:
-    return "active" in (api_key.status or "").lower()
-
-
-def _get_hf_monitor_token(user_id: int, category: str | None = None) -> str | None:
-    db = SessionLocal()
-    try:
-        query = db.query(models.ApiKey).filter(
-            models.ApiKey.user_id == user_id,
-            models.ApiKey.provider == "huggingface",
-        )
-        candidates = [key for key in query.all() if _is_active_hf_key(key)]
-        if category:
-            normalized = category.strip().lower()
-            category_matches = [
-                key for key in candidates
-                if (key.category or "").strip().lower() == normalized
-            ]
-            if category_matches:
-                candidates = category_matches
-        if not candidates:
-            return None
-        try:
-            return decrypt_value(candidates[0].encrypted_key)
-        except Exception:
-            return None
-    finally:
-        db.close()
-
-
-def _classify_hf_runtime_stage(stage: str | None) -> str | None:
-    if not stage:
-        return None
-
-    normalized = str(stage).strip().upper()
-    if normalized in {"RUNNING", "RUNNING_BUILDING", "READY"}:
-        return "UP"
-    if normalized in {"BUILDING", "STARTING", "PREPARING"}:
-        return "AWAKENING"
-    if normalized in {"SLEEPING", "STOPPED"}:
-        return "SLEEPING"
-    if normalized in {"PAUSED", "NO_APP_FILE", "CONFIG_ERROR", "BUILD_ERROR", "RUNTIME_ERROR", "DELETING"}:
-        return "DOWN"
-    return None
-
-
-async def _get_hf_runtime_status(
-    client: httpx.AsyncClient,
-    space_id: str,
-    hf_token: str | None = None,
-) -> str | None:
-    runtime_url = f"https://huggingface.co/api/spaces/{space_id}/runtime"
-    headers = {"Accept": "application/json", **HEADERS}
-    if hf_token:
-        headers["Authorization"] = f"Bearer {hf_token}"
-    try:
-        resp = await client.get(runtime_url, headers=headers)
-        if resp.status_code >= 400:
-            return None
-        payload = resp.json()
-    except Exception:
-        return None
-
-    stage = payload.get("stage")
-    if stage is None and isinstance(payload.get("runtime"), dict):
-        stage = payload["runtime"].get("stage")
-    return _classify_hf_runtime_stage(stage)
-
-
 def _classify_response(url: str, status_code: int, body: str = "") -> str:
     if _is_hugging_face_url(url):
         lowered = body.lower()
@@ -180,17 +54,59 @@ def _classify_response(url: str, status_code: int, body: str = "") -> str:
             return "AWAKENING"
         if "sleeping" in lowered or '"stage":"sleeping"' in lowered or "'stage':'sleeping'" in lowered:
             return "SLEEPING"
-        # Generic monitors treat 4xx as reachable, but Hugging Face Space
-        # pages often return 401/403/404 for private or missing Spaces. Calling
-        # those UP makes private/sleeping Space monitors look healthy when the
-        # user cannot actually reach the app.
+        if "building" in lowered or "starting" in lowered or "preparing" in lowered:
+            return "AWAKENING"
+        if "runtime error" in lowered or "build error" in lowered or "config error" in lowered:
+            return "DOWN"
+        # For Space monitors we trust the live app response more than any
+        # inferred metadata. If the app host answers with a non-5xx response,
+        # Cloud Command should treat the Space as reachable.
         if 200 <= status_code < 400:
+            return "UP"
+        if 400 <= status_code < 500:
             return "UP"
         return "DOWN"
 
     if status_code < 500:
         return "UP"
     return "DOWN"
+
+
+async def _probe_hf_space(client: httpx.AsyncClient, url: str) -> tuple[str, int]:
+    loop = asyncio.get_event_loop()
+    candidates = []
+
+    normalized = url.rstrip("/")
+    if normalized:
+        candidates.append(normalized)
+    if normalized.endswith(".hf.space"):
+        candidates.append(f"{normalized}/config")
+
+    best_status = "DOWN"
+    best_latency = 0
+
+    for candidate in dict.fromkeys(candidates):
+        try:
+            start = loop.time()
+            resp = await client.get(candidate, headers=HEADERS)
+            latency = int((loop.time() - start) * 1000)
+            body_preview = resp.text[:20000]
+            status = _classify_response(candidate, resp.status_code, body_preview)
+
+            if status == "UP":
+                return status, latency
+            if status in {"AWAKENING", "SLEEPING"}:
+                best_status, best_latency = status, latency
+            elif best_status == "DOWN":
+                best_status, best_latency = status, latency
+        except httpx.TimeoutException:
+            continue
+        except httpx.ConnectError:
+            continue
+        except Exception:
+            continue
+
+    return best_status, best_latency
 
 
 async def ping_url(client: httpx.AsyncClient, monitor: dict) -> tuple[str, int]:
@@ -207,13 +123,8 @@ async def ping_url(client: httpx.AsyncClient, monitor: dict) -> tuple[str, int]:
 
     url = monitor["url"]
     is_hf_space = _is_hugging_face_url(url)
-    hf_token = None
     if is_hf_space:
-        hf_token = await asyncio.to_thread(
-            _get_hf_monitor_token,
-            monitor["user_id"],
-            monitor.get("category"),
-        )
+        return await _probe_hf_space(client, url)
 
     # --- Attempt HEAD first (unless it's a Hugging Face space) ---
     if not is_hf_space:
@@ -238,13 +149,6 @@ async def ping_url(client: httpx.AsyncClient, monitor: dict) -> tuple[str, int]:
         resp = await client.get(url, headers=HEADERS)
         latency = int((loop.time() - start) * 1000)
         body_preview = resp.text[:20000]
-
-        if is_hf_space:
-            space_id = _extract_hf_space_id(url, body_preview)
-            if space_id:
-                runtime_status = await _get_hf_runtime_status(client, space_id, hf_token)
-                if runtime_status:
-                    return runtime_status, latency
 
         return _classify_response(url, resp.status_code, body_preview), latency
 
