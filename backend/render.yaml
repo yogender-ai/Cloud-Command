@@ -34,6 +34,12 @@ services:
         value: 21600
       - key: PINGER_WRITE_RESULTS
         value: false
+      - key: PINGER_MEMORY_LOGS_PER_MONITOR
+        value: 96
+      - key: MONITOR_REQUEST_TIMEOUT_SECONDS
+        value: 45
+      - key: BACKGROUND_WORKER_TIMEOUT_SECONDS
+        value: 60
       - key: MIN_MONITOR_INTERVAL_SECONDS
         value: 840
       - key: MONITOR_LOG_RETENTION_PER_MONITOR

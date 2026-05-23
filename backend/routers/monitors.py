@@ -165,13 +165,32 @@ def get_monitor_logs(
     if not monitor:
         raise HTTPException(status_code=404, detail="Monitor not found")
 
-    return (
+    db_logs = (
         db.query(models.MonitorLog)
         .filter(models.MonitorLog.monitor_id == monitor_id)
         .order_by(models.MonitorLog.created_at.desc())
         .limit(50)
         .all()
     )
+    try:
+        from services.pinger import get_monitor_memory_logs
+        memory_logs = get_monitor_memory_logs(monitor_id)
+    except Exception:
+        memory_logs = []
+
+    combined = [
+        {
+            "id": log.id,
+            "monitor_id": log.monitor_id,
+            "status": log.status,
+            "latency": log.latency,
+            "created_at": log.created_at,
+        }
+        for log in db_logs
+    ]
+    combined.extend(memory_logs)
+    combined.sort(key=lambda row: row["created_at"], reverse=True)
+    return combined[:50]
 
 
 @router.get("/{monitor_id}/logs/csv")
@@ -191,16 +210,27 @@ def export_logs_csv(
     if not monitor:
         raise HTTPException(status_code=404, detail="Monitor not found")
 
-    logs = (
+    db_logs = (
         db.query(models.MonitorLog)
         .filter(models.MonitorLog.monitor_id == monitor_id)
         .order_by(models.MonitorLog.created_at.desc())
         .all()
     )
+    try:
+        from services.pinger import get_monitor_memory_logs
+        memory_logs = get_monitor_memory_logs(monitor_id)
+    except Exception:
+        memory_logs = []
 
     csv = "Timestamp,Status,Latency(ms)\n"
-    for log in logs:
-        csv += f"{log.created_at.isoformat()},{log.status},{log.latency}\n"
+    rows = [
+        {"created_at": log.created_at, "status": log.status, "latency": log.latency}
+        for log in db_logs
+    ]
+    rows.extend(memory_logs)
+    rows.sort(key=lambda row: row["created_at"], reverse=True)
+    for log in rows:
+        csv += f"{log['created_at'].isoformat()},{log['status']},{log['latency']}\n"
 
     return Response(
         content=csv,

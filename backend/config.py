@@ -52,6 +52,18 @@ class Settings:
         _env_int("PINGER_CACHE_REFRESH_SECONDS", 21600),
     )
     PINGER_WRITE_RESULTS: bool = _env_bool("PINGER_WRITE_RESULTS", False)
+    PINGER_MEMORY_LOGS_PER_MONITOR: int = max(
+        10,
+        _env_int("PINGER_MEMORY_LOGS_PER_MONITOR", 96),
+    )
+    MONITOR_REQUEST_TIMEOUT_SECONDS: int = max(
+        10,
+        _env_int("MONITOR_REQUEST_TIMEOUT_SECONDS", 45),
+    )
+    BACKGROUND_WORKER_TIMEOUT_SECONDS: int = max(
+        30,
+        _env_int("BACKGROUND_WORKER_TIMEOUT_SECONDS", 60),
+    )
     MIN_MONITOR_INTERVAL_SECONDS: int = max(
         60,
         _env_int("MIN_MONITOR_INTERVAL_SECONDS", 840),

@@ -52,6 +52,12 @@ def _is_hugging_face_url(url: str) -> bool:
         host == "huggingface.co" and parsed.path.startswith("/spaces/")
     )
 
+
+def _is_render_url(url: str) -> bool:
+    parsed = urlparse(url.lower())
+    return parsed.netloc.endswith(".onrender.com")
+
+
 def _classify_response(url: str, status_code: int, body: str = "") -> str:
     if _is_hugging_face_url(url):
         lowered = body.lower()
@@ -92,6 +98,7 @@ def _monitor_to_cache_entry(monitor, alert_email: str | None = None, existing: d
         "last_checked": existing.get("last_checked"),
         "last_latency": existing.get("last_latency"),
         "last_error": existing.get("last_error"),
+        "history": existing.get("history", []),
     }
 
 
@@ -148,6 +155,12 @@ def remove_monitor_cache(monitor_id: int) -> None:
 def get_monitor_cache_snapshot() -> dict[int, dict]:
     with _cache_lock:
         return {monitor_id: dict(data) for monitor_id, data in _monitor_cache.items()}
+
+
+def get_monitor_memory_logs(monitor_id: int) -> list[dict]:
+    with _cache_lock:
+        history = _monitor_cache.get(monitor_id, {}).get("history", [])
+        return [dict(row) for row in history]
 
 
 async def _probe_hf_space(client: httpx.AsyncClient, url: str) -> tuple[str, int]:
@@ -231,7 +244,7 @@ async def ping_url(client: httpx.AsyncClient, monitor: dict) -> tuple[str, int]:
         return _classify_response(url, resp.status_code, body_preview), latency
 
     except httpx.TimeoutException:
-        return "DOWN", 0
+        return ("AWAKENING", 0) if _is_render_url(url) else ("DOWN", 0)
     except httpx.ConnectError:
         return "DOWN", 0
     except Exception:
@@ -280,6 +293,19 @@ def _apply_ping_results_to_cache(due, results, now):
                 status = "UP"
 
             previous_status = cached.get("status")
+            history = cached.setdefault("history", [])
+            history.append(
+                {
+                    "id": -int(now.timestamp() * 1000) - monitor_id,
+                    "monitor_id": monitor_id,
+                    "status": raw_status,
+                    "latency": latency,
+                    "created_at": now,
+                }
+            )
+            if len(history) > settings.PINGER_MEMORY_LOGS_PER_MONITOR:
+                del history[:-settings.PINGER_MEMORY_LOGS_PER_MONITOR]
+
             cached.update(
                 {
                     "status": status,
@@ -350,7 +376,12 @@ async def ping_all_monitors():
         return
 
     async with httpx.AsyncClient(
-        timeout=httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=2.0),
+        timeout=httpx.Timeout(
+            connect=5.0,
+            read=float(settings.MONITOR_REQUEST_TIMEOUT_SECONDS),
+            write=5.0,
+            pool=2.0,
+        ),
         follow_redirects=True,
         limits=httpx.Limits(max_connections=20, max_keepalive_connections=10),
     ) as client:
@@ -366,6 +397,8 @@ async def ping_all_monitors():
             continue
         try:
             from services.mailer import send_status_change_email
+            if monitor["status"] not in {"UP", "DOWN"}:
+                continue
             send_status_change_email(
                 to=alert_email,
                 site_name=monitor["name"],
@@ -384,7 +417,10 @@ async def start_pinger():
     while True:
         try:
             if settings.ENABLE_BACKGROUND_PINGER:
-                await asyncio.wait_for(ping_all_monitors(), timeout=25)
+                await asyncio.wait_for(
+                    ping_all_monitors(),
+                    timeout=settings.BACKGROUND_WORKER_TIMEOUT_SECONDS,
+                )
             if settings.ENABLE_SCHEDULED_JOBS:
                 from services.scheduler import run_due_scheduled_jobs
                 await asyncio.wait_for(run_due_scheduled_jobs(), timeout=25)
