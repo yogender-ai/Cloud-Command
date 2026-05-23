@@ -10,6 +10,13 @@ import { toast } from 'sonner';
 import { getMonitors, addMonitor, deleteMonitor, updateMonitor, getMonitorLogs, exportMonitorCSV, inspectMonitor, getMonitorAnalytics, API_URL, ensureBackendAwake } from '../api';
 import { CategoryBadge, CategoryEditor, getCategoryColor } from '../components/CategoryEditor';
 
+const MONITOR_INTERVAL_OPTIONS = [
+  { value: 840, label: '14m' },
+  { value: 1800, label: '30m' },
+  { value: 3600, label: '1h' },
+  { value: 21600, label: '6h' },
+];
+
 function formatAgo(dateStr) {
   if (!dateStr) return 'never';
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -360,7 +367,7 @@ export default function SiteMonitor() {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [selected, setSelected] = useState(null);
-  const [form, setForm] = useState({ name: '', url: 'https://', category: '', interval_seconds: 300 });
+  const [form, setForm] = useState({ name: '', url: 'https://', category: '', interval_seconds: 840 });
   const [adding, setAdding] = useState(false);
   const [filterCat, setFilterCat] = useState('All');
   const prevStatuses = useRef({});
@@ -389,7 +396,7 @@ export default function SiteMonitor() {
     try {
       await addMonitor(form);
       setShowAdd(false);
-      setForm({ name: '', url: 'https://', category: '', interval_seconds: 300 });
+      setForm({ name: '', url: 'https://', category: '', interval_seconds: 840 });
       load();
       toast.success('Monitor deployed');
     } catch (err) {
@@ -515,10 +522,10 @@ export default function SiteMonitor() {
                 <div className="form-group">
                   <label className="form-label">Polling Interval</label>
                   <div className="interval-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 8 }}>
-                    {[300, 600, 900, 1800].map(v => (
-                      <button key={v} type="button" onClick={() => setForm({...form, interval_seconds: v})}
-                        className={`btn ${form.interval_seconds === v ? 'btn-primary' : 'btn-secondary'}`} style={{ justifyContent: 'center', fontSize: 12 }}>
-                        {v < 60 ? `${v}s` : `${v / 60}m`}
+                    {MONITOR_INTERVAL_OPTIONS.map(({ value, label }) => (
+                      <button key={value} type="button" onClick={() => setForm({...form, interval_seconds: value})}
+                        className={`btn ${form.interval_seconds === value ? 'btn-primary' : 'btn-secondary'}`} style={{ justifyContent: 'center', fontSize: 12 }}>
+                        {label}
                       </button>
                     ))}
                   </div>

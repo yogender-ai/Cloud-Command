@@ -35,7 +35,7 @@ class MonitorCreate(BaseModel):
     url: str
     name: str
     category: Optional[str] = None
-    interval_seconds: int = 60
+    interval_seconds: int = 840
 
 class MonitorUpdate(BaseModel):
     name: Optional[str] = None
