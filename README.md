@@ -88,11 +88,21 @@ Open [http://localhost:5173](http://localhost:5173)
 | `SMTP_EMAIL` | Recommended | Gmail address for alerts and OTP emails |
 | `SMTP_PASSWORD` | Recommended | Gmail App Password; normal Gmail passwords will fail |
 | `RENDER_EXTERNAL_URL` | Optional | Self-ping URL for free tier keepalive |
+| `ENABLE_BACKGROUND_PINGER` | Optional | Set `false` to stop site monitor DB polling |
+| `ENABLE_SCHEDULED_JOBS` | Optional | Set `false` to stop scheduled job DB polling |
+| `ENABLE_SELF_PING` | Optional | Keep `false` on Neon Free unless you intentionally want always-on |
+| `BACKGROUND_WORKER_INTERVAL_SECONDS` | Optional | Background scan cadence; `900` is friendlier to Neon Free than `60` |
+| `MIN_MONITOR_INTERVAL_SECONDS` | Optional | Minimum per-site monitor interval; `900` reduces Neon wakeups |
+| `MONITOR_LOG_RETENTION_PER_MONITOR` | Optional | Lower values reduce DB writes and storage growth |
 
 Generate an encryption key:
 ```bash
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 ```
+
+### Neon Free usage notes
+
+Neon Free includes 100 CU-hours per project each month. Cloud Command can burn through that if background monitoring wakes the database too often. For the lowest usage, keep `ENABLE_SELF_PING=false`, set `BACKGROUND_WORKER_INTERVAL_SECONDS=900`, set `MIN_MONITOR_INTERVAL_SECONDS=900`, and disable `ENABLE_BACKGROUND_PINGER` or `ENABLE_SCHEDULED_JOBS` when you are not using those features.
 
 ### Frontend (`frontend/.env.local`)
 

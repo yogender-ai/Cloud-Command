@@ -22,5 +22,17 @@ services:
         value: Cloud Command
       - key: RENDER_EXTERNAL_URL
         sync: false
+      - key: ENABLE_BACKGROUND_PINGER
+        value: true
+      - key: ENABLE_SCHEDULED_JOBS
+        value: true
+      - key: ENABLE_SELF_PING
+        value: false
+      - key: BACKGROUND_WORKER_INTERVAL_SECONDS
+        value: 900
+      - key: MIN_MONITOR_INTERVAL_SECONDS
+        value: 900
+      - key: MONITOR_LOG_RETENTION_PER_MONITOR
+        value: 250
       - key: PYTHON_VERSION
         value: 3.11.0

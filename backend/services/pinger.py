@@ -300,4 +300,4 @@ async def start_pinger():
             print("Background worker cycle timed out; skipping this tick")
         except Exception as e:
             print(f"Background worker loop error: {e}")
-        await asyncio.sleep(60)
+        await asyncio.sleep(settings.BACKGROUND_WORKER_INTERVAL_SECONDS)

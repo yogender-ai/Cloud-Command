@@ -28,9 +28,11 @@ services:
         value: true
       - key: ENABLE_SELF_PING
         value: false
+      - key: BACKGROUND_WORKER_INTERVAL_SECONDS
+        value: 900
       - key: MIN_MONITOR_INTERVAL_SECONDS
-        value: 300
+        value: 900
       - key: MONITOR_LOG_RETENTION_PER_MONITOR
-        value: 500
+        value: 250
       - key: PYTHON_VERSION
         value: 3.11.0
