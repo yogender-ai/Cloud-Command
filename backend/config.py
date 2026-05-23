@@ -41,15 +41,20 @@ class Settings:
     ).rstrip("/")
 
     ENABLE_BACKGROUND_PINGER: bool = _env_bool("ENABLE_BACKGROUND_PINGER", True)
-    ENABLE_SCHEDULED_JOBS: bool = _env_bool("ENABLE_SCHEDULED_JOBS", True)
+    ENABLE_SCHEDULED_JOBS: bool = _env_bool("ENABLE_SCHEDULED_JOBS", False)
     ENABLE_SELF_PING: bool = _env_bool("ENABLE_SELF_PING", False)
     BACKGROUND_WORKER_INTERVAL_SECONDS: int = max(
         60,
-        _env_int("BACKGROUND_WORKER_INTERVAL_SECONDS", 900),
+        _env_int("BACKGROUND_WORKER_INTERVAL_SECONDS", 840),
     )
+    PINGER_CACHE_REFRESH_SECONDS: int = max(
+        900,
+        _env_int("PINGER_CACHE_REFRESH_SECONDS", 21600),
+    )
+    PINGER_WRITE_RESULTS: bool = _env_bool("PINGER_WRITE_RESULTS", False)
     MIN_MONITOR_INTERVAL_SECONDS: int = max(
         60,
-        _env_int("MIN_MONITOR_INTERVAL_SECONDS", 900),
+        _env_int("MIN_MONITOR_INTERVAL_SECONDS", 840),
     )
     MONITOR_LOG_RETENTION_PER_MONITOR: int = _env_int("MONITOR_LOG_RETENTION_PER_MONITOR", 250)
 

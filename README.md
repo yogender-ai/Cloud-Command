@@ -90,9 +90,11 @@ Open [http://localhost:5173](http://localhost:5173)
 | `RENDER_EXTERNAL_URL` | Optional | Self-ping URL for free tier keepalive |
 | `ENABLE_BACKGROUND_PINGER` | Optional | Set `false` to stop site monitor DB polling |
 | `ENABLE_SCHEDULED_JOBS` | Optional | Set `false` to stop scheduled job DB polling |
-| `ENABLE_SELF_PING` | Optional | Keep `false` on Neon Free unless you intentionally want always-on |
-| `BACKGROUND_WORKER_INTERVAL_SECONDS` | Optional | Background scan cadence; `900` is friendlier to Neon Free than `60` |
-| `MIN_MONITOR_INTERVAL_SECONDS` | Optional | Minimum per-site monitor interval; `900` reduces Neon wakeups |
+| `ENABLE_SELF_PING` | Optional | Set `true` only when Cloud Command itself should stay awake as the waker |
+| `BACKGROUND_WORKER_INTERVAL_SECONDS` | Optional | Background scan cadence; `840` keeps apps warm before 15-minute sleep windows |
+| `PINGER_CACHE_REFRESH_SECONDS` | Optional | How often the pinger refreshes targets from Neon; default `21600` |
+| `PINGER_WRITE_RESULTS` | Optional | Keep `false` to avoid a Neon write on every ping cycle |
+| `MIN_MONITOR_INTERVAL_SECONDS` | Optional | Minimum per-site monitor interval; `840` matches the warmup cadence |
 | `MONITOR_LOG_RETENTION_PER_MONITOR` | Optional | Lower values reduce DB writes and storage growth |
 
 Generate an encryption key:
@@ -102,7 +104,7 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 ### Neon Free usage notes
 
-Neon Free includes 100 CU-hours per project each month. Cloud Command can burn through that if background monitoring wakes the database too often. For the lowest usage, keep `ENABLE_SELF_PING=false`, set `BACKGROUND_WORKER_INTERVAL_SECONDS=900`, set `MIN_MONITOR_INTERVAL_SECONDS=900`, and disable `ENABLE_BACKGROUND_PINGER` or `ENABLE_SCHEDULED_JOBS` when you are not using those features.
+Neon Free includes 100 CU-hours per project each month. Cloud Command can burn through that if the pinger reads or writes Neon every cycle. The pinger now keeps monitor targets in memory, refreshes them from Neon only occasionally, and does not write ping results unless `PINGER_WRITE_RESULTS=true`. If Cloud Command is the always-on waker, use `ENABLE_SELF_PING=true`, `BACKGROUND_WORKER_INTERVAL_SECONDS=840`, `MIN_MONITOR_INTERVAL_SECONDS=840`, `PINGER_CACHE_REFRESH_SECONDS=21600`, and `PINGER_WRITE_RESULTS=false`.
 
 ### Frontend (`frontend/.env.local`)
 

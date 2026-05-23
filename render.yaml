@@ -25,13 +25,17 @@ services:
       - key: ENABLE_BACKGROUND_PINGER
         value: true
       - key: ENABLE_SCHEDULED_JOBS
-        value: true
-      - key: ENABLE_SELF_PING
         value: false
+      - key: ENABLE_SELF_PING
+        value: true
       - key: BACKGROUND_WORKER_INTERVAL_SECONDS
-        value: 900
+        value: 840
+      - key: PINGER_CACHE_REFRESH_SECONDS
+        value: 21600
+      - key: PINGER_WRITE_RESULTS
+        value: false
       - key: MIN_MONITOR_INTERVAL_SECONDS
-        value: 900
+        value: 840
       - key: MONITOR_LOG_RETENTION_PER_MONITOR
         value: 250
       - key: PYTHON_VERSION

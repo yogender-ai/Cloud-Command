@@ -12,6 +12,7 @@ Key design decisions:
 import asyncio
 import httpx
 from datetime import datetime, timezone
+from threading import RLock
 from urllib.parse import urlparse
 from sqlalchemy.orm import Session
 
@@ -38,6 +39,10 @@ HEADERS = {
 # Track consecutive failures per monitor id to avoid immediate false DOWN
 _consecutive_failures: dict[int, int] = {}
 FAILURES_BEFORE_DOWN = 2  # require this many consecutive failures to mark DOWN
+
+_monitor_cache: dict[int, dict] = {}
+_monitor_cache_loaded_at: datetime | None = None
+_cache_lock = RLock()
 
 
 def _is_hugging_face_url(url: str) -> bool:
@@ -70,6 +75,79 @@ def _classify_response(url: str, status_code: int, body: str = "") -> str:
     if status_code < 500:
         return "UP"
     return "DOWN"
+
+
+def _monitor_to_cache_entry(monitor, alert_email: str | None = None, existing: dict | None = None) -> dict:
+    existing = existing or {}
+    return {
+        "id": monitor.id,
+        "url": monitor.url,
+        "status": existing.get("status", monitor.status),
+        "db_status": monitor.status,
+        "user_id": monitor.user_id,
+        "name": monitor.name,
+        "category": monitor.category,
+        "interval_seconds": max(settings.MIN_MONITOR_INTERVAL_SECONDS, monitor.interval_seconds or 60),
+        "alert_email": alert_email or existing.get("alert_email"),
+        "last_checked": existing.get("last_checked"),
+        "last_latency": existing.get("last_latency"),
+        "last_error": existing.get("last_error"),
+    }
+
+
+def refresh_monitor_cache(force: bool = False) -> int:
+    """Refresh ping targets from Neon rarely, then run the wake loop from memory."""
+    global _monitor_cache_loaded_at
+
+    now = datetime.now(timezone.utc)
+    with _cache_lock:
+        cache_age = (now - _monitor_cache_loaded_at).total_seconds() if _monitor_cache_loaded_at else None
+        if not force and _monitor_cache and cache_age is not None and cache_age < settings.PINGER_CACHE_REFRESH_SECONDS:
+            return len(_monitor_cache)
+
+    db: Session = SessionLocal()
+    try:
+        rows = (
+            db.query(models.Monitor, models.User.email, models.User.notification_email)
+            .join(models.User, models.Monitor.user_id == models.User.id)
+            .filter(models.Monitor.user_id.isnot(None))
+            .all()
+        )
+        next_cache = {}
+        with _cache_lock:
+            for monitor, email, notification_email in rows:
+                alert_email = notification_email or email
+                next_cache[monitor.id] = _monitor_to_cache_entry(
+                    monitor,
+                    alert_email=alert_email,
+                    existing=_monitor_cache.get(monitor.id),
+                )
+            _monitor_cache.clear()
+            _monitor_cache.update(next_cache)
+            _monitor_cache_loaded_at = now
+            return len(_monitor_cache)
+    finally:
+        db.close()
+
+
+def upsert_monitor_cache(monitor, alert_email: str | None = None) -> None:
+    with _cache_lock:
+        _monitor_cache[monitor.id] = _monitor_to_cache_entry(
+            monitor,
+            alert_email=alert_email,
+            existing=_monitor_cache.get(monitor.id),
+        )
+
+
+def remove_monitor_cache(monitor_id: int) -> None:
+    with _cache_lock:
+        _monitor_cache.pop(monitor_id, None)
+        _consecutive_failures.pop(monitor_id, None)
+
+
+def get_monitor_cache_snapshot() -> dict[int, dict]:
+    with _cache_lock:
+        return {monitor_id: dict(data) for monitor_id, data in _monitor_cache.items()}
 
 
 async def _probe_hf_space(client: httpx.AsyncClient, url: str) -> tuple[str, int]:
@@ -160,43 +238,23 @@ async def ping_url(client: httpx.AsyncClient, monitor: dict) -> tuple[str, int]:
         return "DOWN", 0
 
 
-def _load_due_monitors():
-    """Load due monitors using synchronous SQLAlchemy outside the event loop."""
-    db: Session = SessionLocal()
-    try:
-        monitors = db.query(models.Monitor).filter(models.Monitor.user_id.isnot(None)).all()
-        now = datetime.now(timezone.utc)
-        due = []
-
-        for monitor in monitors:
-            if monitor.last_checked:
-                last = monitor.last_checked
-                if last.tzinfo is None:
-                    last = last.replace(tzinfo=timezone.utc)
-                else:
-                    last = last.astimezone(timezone.utc)
-                interval = max(settings.MIN_MONITOR_INTERVAL_SECONDS, monitor.interval_seconds or 60)
-                elapsed = (now - last).total_seconds()
-                if elapsed < interval - 2:
-                    continue
-            due.append({
-                "id": monitor.id,
-                "url": monitor.url,
-                "status": monitor.status,
-                "user_id": monitor.user_id,
-                "name": monitor.name,
-                "category": monitor.category,
-            })
-
-        return due, now
-    finally:
-        db.close()
+def _load_due_monitors_from_cache():
+    """Load due monitors from memory so the wake loop does not wake Neon."""
+    now = datetime.now(timezone.utc)
+    due = []
+    with _cache_lock:
+        for monitor in _monitor_cache.values():
+            last = monitor.get("last_checked")
+            interval = max(settings.MIN_MONITOR_INTERVAL_SECONDS, monitor.get("interval_seconds") or 60)
+            if last and (now - last).total_seconds() < interval - 2:
+                continue
+            due.append(dict(monitor))
+    return due, now
 
 
-def _save_ping_results(due, results, now):
-    """Persist ping results using synchronous SQLAlchemy outside the event loop."""
-    db = SessionLocal()
-    try:
+def _apply_ping_results_to_cache(due, results, now):
+    changed = []
+    with _cache_lock:
         for monitor_data, result in zip(due, results):
             if isinstance(result, Exception):
                 raw_status, latency = "DOWN", 0
@@ -204,11 +262,14 @@ def _save_ping_results(due, results, now):
                 raw_status, latency = result
 
             monitor_id = monitor_data["id"]
+            cached = _monitor_cache.get(monitor_id)
+            if not cached:
+                continue
 
             if raw_status == "DOWN":
                 _consecutive_failures[monitor_id] = _consecutive_failures.get(monitor_id, 0) + 1
                 if _consecutive_failures[monitor_id] < FAILURES_BEFORE_DOWN:
-                    status = monitor_data["status"]
+                    status = cached.get("status", monitor_data["status"])
                 else:
                     status = "DOWN"
             elif raw_status in {"AWAKENING", "SLEEPING"}:
@@ -218,28 +279,42 @@ def _save_ping_results(due, results, now):
                 _consecutive_failures[monitor_id] = 0
                 status = "UP"
 
-            previous_status = monitor_data["status"]
+            previous_status = cached.get("status")
+            cached.update(
+                {
+                    "status": status,
+                    "raw_status": raw_status,
+                    "last_checked": now,
+                    "last_latency": latency,
+                    "last_error": None if status == "UP" else raw_status,
+                }
+            )
+            if previous_status != status:
+                changed.append(dict(cached))
+    return changed
+
+
+def _save_ping_results(due, results, now):
+    """Optionally persist ping results; disabled by default to protect Neon Free."""
+    if not settings.PINGER_WRITE_RESULTS:
+        return
+
+    db = SessionLocal()
+    try:
+        for monitor_data, result in zip(due, results):
+            if isinstance(result, Exception):
+                raw_status, latency = "DOWN", 0
+            else:
+                raw_status, latency = result
+
+            monitor_id = monitor_data["id"]
+            with _cache_lock:
+                status = _monitor_cache.get(monitor_id, {}).get("status", raw_status)
 
             db.query(models.Monitor).filter(models.Monitor.id == monitor_id).update(
                 {"status": status, "last_checked": now}
             )
             db.add(models.MonitorLog(monitor_id=monitor_id, status=raw_status, latency=latency))
-
-            if previous_status != status:
-                try:
-                    owner = db.query(models.User).filter(models.User.id == monitor_data["user_id"]).first()
-                    if owner:
-                        alert_email = owner.notification_email or owner.email
-                        if alert_email:
-                            from services.mailer import send_status_change_email
-                            send_status_change_email(
-                                to=alert_email,
-                                site_name=monitor_data["name"],
-                                site_url=monitor_data["url"],
-                                new_status=status,
-                            )
-                except Exception as e:
-                    print(f"Alert email failed: {e}")
 
             if settings.MONITOR_LOG_RETENTION_PER_MONITOR > 0:
                 old_log_ids = [
@@ -269,7 +344,8 @@ def _save_ping_results(due, results, now):
 
 async def ping_all_monitors():
     """Ping all monitors that are due for a check without blocking FastAPI."""
-    due, now = await asyncio.to_thread(_load_due_monitors)
+    await asyncio.to_thread(refresh_monitor_cache)
+    due, now = _load_due_monitors_from_cache()
     if not due:
         return
 
@@ -282,6 +358,22 @@ async def ping_all_monitors():
             *[ping_url(client, m) for m in due],
             return_exceptions=True,
         )
+
+    changed = _apply_ping_results_to_cache(due, results, now)
+    for monitor in changed:
+        alert_email = monitor.get("alert_email")
+        if not alert_email:
+            continue
+        try:
+            from services.mailer import send_status_change_email
+            send_status_change_email(
+                to=alert_email,
+                site_name=monitor["name"],
+                site_url=monitor["url"],
+                new_status=monitor["status"],
+            )
+        except Exception as e:
+            print(f"Alert email failed: {e}")
 
     await asyncio.to_thread(_save_ping_results, due, results, now)
 

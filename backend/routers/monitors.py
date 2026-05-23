@@ -13,12 +13,34 @@ router = APIRouter(prefix="/api/monitors", tags=["monitors"])
 @router.get("", response_model=List[schemas.MonitorResponse])
 def list_monitors(db: Session = Depends(get_db), user: models.User = Depends(get_current_user)):
     """List all monitors belonging to the current user."""
-    return (
+    monitors = (
         db.query(models.Monitor)
         .filter(models.Monitor.user_id == user.id)
         .order_by(models.Monitor.created_at.desc())
         .all()
     )
+    try:
+        from services.pinger import get_monitor_cache_snapshot
+        cache = get_monitor_cache_snapshot()
+    except Exception:
+        cache = {}
+
+    response = []
+    for monitor in monitors:
+        cached = cache.get(monitor.id, {})
+        response.append(
+            {
+                "id": monitor.id,
+                "url": monitor.url,
+                "name": monitor.name,
+                "category": monitor.category,
+                "interval_seconds": monitor.interval_seconds,
+                "status": cached.get("status", monitor.status),
+                "last_checked": cached.get("last_checked", monitor.last_checked),
+                "created_at": monitor.created_at,
+            }
+        )
+    return response
 
 
 @router.post("", response_model=schemas.MonitorResponse, status_code=201)
@@ -47,6 +69,11 @@ def create_monitor(
     db.add(monitor)
     db.commit()
     db.refresh(monitor)
+    try:
+        from services.pinger import upsert_monitor_cache
+        upsert_monitor_cache(monitor, alert_email=user.notification_email or user.email)
+    except Exception as e:
+        print(f"Monitor cache update failed: {e}")
 
     # Notify user
     try:
@@ -82,6 +109,11 @@ def update_monitor(
         monitor.category = None
     db.commit()
     db.refresh(monitor)
+    try:
+        from services.pinger import upsert_monitor_cache
+        upsert_monitor_cache(monitor, alert_email=user.notification_email or user.email)
+    except Exception as e:
+        print(f"Monitor cache update failed: {e}")
     return monitor
 
 
@@ -103,6 +135,11 @@ def delete_monitor(
     monitor_url = monitor.url
     db.delete(monitor)
     db.commit()
+    try:
+        from services.pinger import remove_monitor_cache
+        remove_monitor_cache(monitor_id)
+    except Exception as e:
+        print(f"Monitor cache delete failed: {e}")
 
     # Notify user
     try:
