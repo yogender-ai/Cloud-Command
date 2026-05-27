@@ -25,7 +25,7 @@ services:
       - key: ENABLE_BACKGROUND_PINGER
         value: true
       - key: ENABLE_SCHEDULED_JOBS
-        value: false
+        value: true
       - key: ENABLE_SELF_PING
         value: true
       - key: BACKGROUND_WORKER_INTERVAL_SECONDS
