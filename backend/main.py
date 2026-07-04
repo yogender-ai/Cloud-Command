@@ -257,3 +257,17 @@ def get_visits():
         return [{"date": v.date.isoformat(), "visits": v.visits} for v in visits]
     finally:
         db.close()
+
+
+@app.get("/api/chaos/exhaust")
+def trigger_chaos():
+    """Chaos Engineering: Hold a DB connection for 15 seconds to exhaust the pool."""
+    import time
+    db = SessionLocal()
+    try:
+        # We must execute a query to actually check out the connection from the pool
+        db.execute(__import__("sqlalchemy").text("SELECT 1"))
+        time.sleep(15)
+        return {"status": "pool_exhausted"}
+    finally:
+        db.close()
