@@ -140,7 +140,7 @@ export function ThemeProvider({ children }) {
   useEffect(() => {
     localStorage.setItem('cc-theme', themeName);
     const root = document.documentElement;
-    // Apply CSS custom properties from theme
+    // Core surfaces / text / borders
     root.style.setProperty('--bg-primary', theme.bg);
     root.style.setProperty('--bg-secondary', theme.bgSecondary);
     root.style.setProperty('--bg-card', theme.bgCard);
@@ -153,15 +153,33 @@ export function ThemeProvider({ children }) {
     root.style.setProperty('--text-primary', theme.textPrimary);
     root.style.setProperty('--text-secondary', theme.textSecondary);
     root.style.setProperty('--text-muted', theme.textMuted);
+
+    // Primary accent (new tokens)
     root.style.setProperty('--accent-main', theme.accent);
     root.style.setProperty('--accent-main-glow', theme.accentGlow);
     root.style.setProperty('--accent-secondary', theme.accentSecondary);
     root.style.setProperty('--gradient-main', theme.gradient);
+
+    // Aliases used across pages/CSS (BUGFIX: themes were half-applied)
+    root.style.setProperty('--accent-indigo', theme.accent);
+    root.style.setProperty('--accent-indigo-glow', theme.accentGlow);
+    root.style.setProperty('--accent-purple', theme.accentSecondary);
+    root.style.setProperty('--accent-purple-glow', theme.accentGlow);
+    root.style.setProperty('--gradient-primary', theme.gradient);
+    root.style.setProperty('--cursor-color', theme.particleColor);
+    root.style.setProperty('--shadow-glow-indigo', `0 0 30px ${theme.accentGlow}`);
+
+    // Ambient / particles / mesh
     root.style.setProperty('--orb-color-1', theme.orbColor1);
     root.style.setProperty('--orb-color-2', theme.orbColor2);
     root.style.setProperty('--orb-color-3', theme.orbColor3);
     root.style.setProperty('--sidebar-bg', theme.sidebarBg);
     root.style.setProperty('--particle-color', theme.particleColor);
+    root.style.setProperty('--mesh-1', theme.orbColor1);
+    root.style.setProperty('--mesh-2', theme.orbColor2);
+    root.style.setProperty('--mesh-3', theme.orbColor3);
+    root.style.setProperty('--mesh-4', theme.accentGlow);
+
     root.setAttribute('data-theme', themeName);
   }, [themeName, theme]);
 

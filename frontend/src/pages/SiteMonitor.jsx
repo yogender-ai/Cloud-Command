@@ -46,25 +46,31 @@ function CopyButton({ text }) {
 function MonitorCard({ monitor, onDelete, onClick, onCategoryChange, allCategories }) {
   const [logs, setLogs] = useState([]);
   useEffect(() => {
-    getMonitorLogs(monitor.id).then(d => setLogs(d.reverse())).catch(() => {});
+    getMonitorLogs(monitor.id).then(d => setLogs(Array.isArray(d) ? d.reverse() : [])).catch(() => {});
     const interval = setInterval(() => {
-      getMonitorLogs(monitor.id).then(d => setLogs(d.reverse())).catch(() => {});
-    }, 60000);  // 60s — reduced from 15s to prevent backend overload
+      getMonitorLogs(monitor.id).then(d => setLogs(Array.isArray(d) ? d.reverse() : [])).catch(() => {});
+    }, 60000);
     return () => clearInterval(interval);
   }, [monitor.id]);
 
   const isUp = monitor.status === 'UP';
   const isAwakening = monitor.status === 'AWAKENING';
   const isSleeping = monitor.status === 'SLEEPING';
+  const stroke = isUp ? '#10b981' : (isAwakening || isSleeping) ? '#f59e0b' : '#f43f5e';
   const borderColor = monitor.category ? getCategoryColor(monitor.category)?.border : undefined;
+  const lastLatency = logs.length ? logs[logs.length - 1]?.latency ?? logs[0]?.latency : null;
+  const avgLatency = logs.length
+    ? Math.round(logs.slice(-10).reduce((s, l) => s + (l.latency || 0), 0) / Math.min(logs.length, 10))
+    : null;
 
   return (
     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95 }}
-      className="card card-interactive" style={{ display: 'flex', flexDirection: 'column', borderColor: borderColor }}>
+      className="card card-interactive monitor-card"
+      style={{ display: 'flex', flexDirection: 'column', borderColor: borderColor || undefined }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8 }}>
         <div onClick={() => onClick(monitor, logs)} style={{ flex: 1, minWidth: 0, cursor: 'pointer' }}>
-          <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 2 }}>{monitor.name}</h3>
-          <p style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 190 }}>
+          <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>{monitor.name}</h3>
+          <p className="monitor-url" title={monitor.url}>
             <Globe size={12} /> {monitor.url}
           </p>
         </div>
@@ -72,38 +78,51 @@ function MonitorCard({ monitor, onDelete, onClick, onCategoryChange, allCategori
           <span className={`badge ${isUp ? 'badge-up badge-live' : (isAwakening || isSleeping) ? 'badge-warning' : 'badge-down'}`}>
             {isUp ? <CheckCircle2 size={10} /> : (isAwakening || isSleeping) ? <Clock size={10} /> : <XCircle size={10} />} {monitor.status}
           </span>
-          <button className="btn btn-ghost btn-icon" onClick={(e) => { e.stopPropagation(); onDelete(monitor.id); }}>
+          <button className="btn btn-ghost btn-icon" aria-label="Delete monitor" onClick={(e) => { e.stopPropagation(); onDelete(monitor.id); }}>
             <Trash2 size={14} color="var(--accent-rose)" />
           </button>
         </div>
       </div>
-      {/* Inline category editor */}
       <div style={{ marginBottom: 8 }} onClick={e => e.stopPropagation()}>
         <CategoryEditor
           category={monitor.category}
           suggestions={allCategories.filter(c => c !== monitor.category)}
-          onSave={async (cat) => {
-            await onCategoryChange(monitor.id, cat);
-          }}
+          onSave={async (cat) => { await onCategoryChange(monitor.id, cat); }}
         />
       </div>
-      <div style={{ height: 80, width: '100%', margin: '8px 0' }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={logs}>
-            <defs>
-              <linearGradient id={`g-${monitor.id}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor={isUp ? '#10b981' : (isAwakening || isSleeping) ? '#f59e0b' : '#f43f5e'} stopOpacity={0.3} />
-                <stop offset="95%" stopColor={isUp ? '#10b981' : (isAwakening || isSleeping) ? '#f59e0b' : '#f43f5e'} stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <Tooltip cursor={{fill: 'transparent'}} contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12 }} labelStyle={{ display: 'none' }} formatter={(v) => [`${v}ms`, 'Latency']} />
-            <Area type="monotone" dataKey="latency" stroke={isUp ? '#10b981' : (isAwakening || isSleeping) ? '#f59e0b' : '#f43f5e'} fill={`url(#g-${monitor.id})`} strokeWidth={2} />
-          </AreaChart>
-        </ResponsiveContainer>
+      <div style={{ height: 88, width: '100%', margin: '4px 0 8px' }} onClick={() => onClick(monitor, logs)}>
+        {logs.length > 0 ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={logs}>
+              <defs>
+                <linearGradient id={`g-${monitor.id}`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={stroke} stopOpacity={0.35} />
+                  <stop offset="95%" stopColor={stroke} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <Tooltip
+                cursor={{ fill: 'transparent' }}
+                contentStyle={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12 }}
+                labelStyle={{ display: 'none' }}
+                formatter={(v) => [`${v}ms`, 'Latency']}
+              />
+              <Area type="monotone" dataKey="latency" stroke={stroke} fill={`url(#g-${monitor.id})`} strokeWidth={2} />
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : (
+          <div className="monitor-chart-empty">
+            <Activity size={16} /> Collecting latency samples…
+          </div>
+        )}
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)', borderTop: '1px solid var(--border)', paddingTop: 12, marginTop: 'auto' }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}><Clock size={11} /> {formatAgo(monitor.last_checked)}</span>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: 'var(--accent-indigo)' }}>Details <ChevronRight size={11} /></span>
+      <div className="monitor-card-footer">
+        <span><Clock size={11} /> {formatAgo(monitor.last_checked)}</span>
+        <span className="monitor-latency-pill">
+          {avgLatency != null ? `${avgLatency}ms avg` : lastLatency != null ? `${lastLatency}ms` : '—'}
+        </span>
+        <span className="monitor-details-link" onClick={() => onClick(monitor, logs)}>
+          Details <ChevronRight size={11} />
+        </span>
       </div>
     </motion.div>
   );
@@ -426,6 +445,9 @@ export default function SiteMonitor() {
   const allCategories = [...new Set(monitors.map(m => m.category).filter(Boolean))];
   const categories = ['All', ...allCategories];
   const filtered = filterCat === 'All' ? monitors : monitors.filter(m => m.category === filterCat);
+  const upCount = monitors.filter(m => m.status === 'UP').length;
+  const downCount = monitors.filter(m => m.status === 'DOWN').length;
+  const warmCount = monitors.filter(m => m.status === 'AWAKENING' || m.status === 'SLEEPING').length;
 
   if (loading) return <div className="page-container"><div className="loading-screen"><div className="spinner" /><p>Loading monitors...</p></div></div>;
 
@@ -439,18 +461,43 @@ export default function SiteMonitor() {
         <button className="btn btn-primary" onClick={() => setShowAdd(true)}><Plus size={16} /> Add Monitor</button>
       </div>
 
-      {/* Category filter bar */}
+      {monitors.length > 0 && (
+        <div className="summary-strip anim-fade">
+          <div className="summary-chip">
+            <span className="summary-chip-label">Total</span>
+            <strong>{monitors.length}</strong>
+          </div>
+          <div className="summary-chip success">
+            <span className="summary-chip-label">Up</span>
+            <strong>{upCount}</strong>
+          </div>
+          <div className={`summary-chip ${downCount ? 'danger' : ''}`}>
+            <span className="summary-chip-label">Down</span>
+            <strong>{downCount}</strong>
+          </div>
+          <div className={`summary-chip ${warmCount ? 'warning' : ''}`}>
+            <span className="summary-chip-label">Warming</span>
+            <strong>{warmCount}</strong>
+          </div>
+          <div className="summary-chip muted">
+            <span className="summary-chip-label">Health</span>
+            <strong>{monitors.length ? `${((upCount / monitors.length) * 100).toFixed(0)}%` : '—'}</strong>
+          </div>
+        </div>
+      )}
+
       {categories.length > 1 && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 24, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div className="filter-bar">
           <Filter size={14} color="var(--text-muted)" />
           {categories.map(cat => (
-            <button key={cat} onClick={() => setFilterCat(cat)} style={{
-              padding: '5px 14px', borderRadius: 99, fontSize: 12, fontWeight: 600,
-              cursor: 'pointer', border: '1px solid', transition: 'all 0.15s',
-              background: filterCat === cat ? 'var(--accent-indigo-glow)' : 'transparent',
-              borderColor: filterCat === cat ? 'rgba(99,102,241,0.4)' : 'var(--border)',
-              color: filterCat === cat ? 'var(--accent-indigo)' : 'var(--text-muted)',
-            }}>{cat}</button>
+            <button
+              key={cat}
+              type="button"
+              className={`filter-chip ${filterCat === cat ? 'active' : ''}`}
+              onClick={() => setFilterCat(cat)}
+            >
+              {cat}
+            </button>
           ))}
         </div>
       )}
@@ -531,7 +578,7 @@ export default function SiteMonitor() {
                   </div>
                 </div>
                 <button type="submit" className="btn btn-primary" disabled={adding} style={{ marginTop: 8 }}>
-                  {adding ? <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> : 'Deploy Monitor'}
+                  {adding ? <div className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} /> : 'Add Monitor'}
                 </button>
               </form>
             </motion.div>

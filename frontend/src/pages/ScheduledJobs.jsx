@@ -91,6 +91,8 @@ export default function ScheduledJobs() {
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [runningId, setRunningId] = useState(null);
+  const [expandedLog, setExpandedLog] = useState({});
   const [form, setForm] = useState(emptyForm);
 
   const load = async () => {
@@ -156,13 +158,17 @@ export default function ScheduledJobs() {
   };
 
   const handleRun = async (job) => {
+    if (runningId) return;
+    setRunningId(job.id);
     try {
-      toast.info(`Running ${job.name}`);
+      toast.info(`Running ${job.name}…`);
       await runScheduledJob(job.id);
-      toast.success('Job completed');
-      load();
+      toast.success(`${job.name} completed`);
+      await load();
     } catch (err) {
       toast.error(err.response?.data?.detail || 'Run failed');
+    } finally {
+      setRunningId(null);
     }
   };
 
@@ -195,18 +201,27 @@ export default function ScheduledJobs() {
           <p className="page-subtitle">Run protected HTTP tasks from Cloud Command without paid background workers.</p>
         </div>
         <div className="header-actions">
-          <button className="btn btn-secondary" onClick={load}><RefreshCcw size={16} /> Refresh</button>
-          <button className="btn btn-secondary" onClick={openNewsIntelIngestPreset}><Activity size={16} /> NewsIntel Ingest</button>
-          <button className="btn btn-secondary" onClick={openNewsIntelEnrichPreset}><Activity size={16} /> NewsIntel Enrich</button>
+          <button className="btn btn-secondary btn-sm" onClick={load} title="Refresh"><RefreshCcw size={15} /> Refresh</button>
+          <button className="btn btn-secondary btn-sm" onClick={openNewsIntelIngestPreset} title="NewsIntel ingest preset">Ingest preset</button>
+          <button className="btn btn-secondary btn-sm" onClick={openNewsIntelEnrichPreset} title="NewsIntel enrich preset">Enrich preset</button>
           <button className="btn btn-primary" onClick={openBlankJob}><Plus size={16} /> New Job</button>
         </div>
       </div>
+
+      {jobs.length > 0 && (
+        <div className="summary-strip">
+          <div className="summary-chip"><span className="summary-chip-label">Jobs</span><strong>{jobs.length}</strong></div>
+          <div className="summary-chip success"><span className="summary-chip-label">Enabled</span><strong>{jobs.filter(j => j.is_enabled).length}</strong></div>
+          <div className="summary-chip"><span className="summary-chip-label">Paused</span><strong>{jobs.filter(j => !j.is_enabled).length}</strong></div>
+          <div className="summary-chip danger"><span className="summary-chip-label">Failed</span><strong>{jobs.filter(j => j.status === 'FAILED').length}</strong></div>
+        </div>
+      )}
 
       {jobs.length === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon"><Clock size={28} color="var(--accent-indigo)" /></div>
           <h3>No scheduled jobs</h3>
-          <p>Create NewsIntel ingestion and enrichment triggers and Cloud Command will call them automatically.</p>
+          <p>Create HTTP cron jobs — Cloud Command will call them on an interval. Presets available for NewsIntel.</p>
           <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
             <button className="btn btn-secondary" onClick={openNewsIntelIngestPreset}>Use Ingest Preset</button>
             <button className="btn btn-secondary" onClick={openNewsIntelEnrichPreset}>Use Enrich Preset</button>
@@ -218,8 +233,10 @@ export default function ScheduledJobs() {
           {jobs.map((job) => {
             const jobLogs = logs[job.id] || [];
             const latestPreview = jobLogs[0]?.response_preview || '';
+            const isRunning = runningId === job.id;
+            const showPreview = expandedLog[job.id];
             return (
-              <motion.div key={job.id} className="card service-card" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+              <motion.div key={job.id} className="card service-card job-card" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
                 <div className="service-card-header">
                   <div style={{ minWidth: 0 }}>
                     <div className="service-name">{job.name}</div>
@@ -229,51 +246,72 @@ export default function ScheduledJobs() {
                       </span>
                       <span className={`badge ${statusTone(job.status)}`}>
                         {statusIcon(job.status)}
-                        {job.status}
+                        {job.status || 'IDLE'}
                       </span>
+                      {job.category && <span className="badge badge-neutral">{job.category}</span>}
                       <span>{Math.round(job.interval_seconds / 60)}m interval</span>
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    <button className="btn btn-secondary btn-icon" title="Run now" onClick={() => handleRun(job)}><Play size={15} /></button>
+                    <button
+                      className="btn btn-secondary btn-icon"
+                      title="Run now"
+                      disabled={!!runningId}
+                      onClick={() => handleRun(job)}
+                    >
+                      {isRunning ? <div className="spinner" style={{ width: 14, height: 14, borderWidth: 2 }} /> : <Play size={15} />}
+                    </button>
                     <button className="btn btn-secondary btn-icon" title={job.is_enabled ? 'Pause' : 'Enable'} onClick={() => handleToggle(job)}><Power size={15} /></button>
                     <button className="btn btn-ghost btn-icon" title="Delete" onClick={() => handleDelete(job)}><Trash2 size={15} color="var(--accent-rose)" /></button>
                   </div>
                 </div>
-                <div className="service-url">{job.method} {job.url}</div>
+                <div className="service-url">
+                  <span className="method-pill">{job.method}</span>
+                  <span className="url-text" title={job.url}>{job.url}</span>
+                </div>
                 <div className="grid grid-3" style={{ gap: 10 }}>
-                  <div className="card" style={{ padding: 12 }}>
+                  <div className="mini-stat">
                     <div className="label">Last Run</div>
                     <strong>{formatAgo(job.last_run_at)}</strong>
                   </div>
-                  <div className="card" style={{ padding: 12 }}>
+                  <div className="mini-stat">
                     <div className="label">Latency</div>
-                    <strong>{job.last_latency_ms ? `${job.last_latency_ms}ms` : '-'}</strong>
+                    <strong>{job.last_latency_ms ? `${job.last_latency_ms}ms` : '—'}</strong>
                   </div>
-                  <div className="card" style={{ padding: 12 }}>
+                  <div className="mini-stat">
                     <div className="label">HTTP</div>
-                    <strong>{job.last_status_code || '-'}</strong>
+                    <strong>{job.last_status_code || '—'}</strong>
                   </div>
                 </div>
                 {job.last_error && <div className="auth-error" style={{ margin: 0 }}>{job.last_error}</div>}
-                {latestPreview && job.status !== 'SUCCESS' && (
-                  <pre className="auth-error" style={{ margin: 0, whiteSpace: 'pre-wrap', color: 'var(--accent-amber)' }}>
-                    {prettyPreview(latestPreview)}
-                  </pre>
+                {(latestPreview || jobLogs[0]?.response_preview) && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    style={{ alignSelf: 'flex-start', marginTop: 4 }}
+                    onClick={() => setExpandedLog(prev => ({ ...prev, [job.id]: !prev[job.id] }))}
+                  >
+                    {showPreview ? 'Hide response' : 'Show last response'}
+                  </button>
+                )}
+                {showPreview && latestPreview && (
+                  <pre className="job-response-preview">{prettyPreview(latestPreview)}</pre>
                 )}
                 <div className="table-wrapper" style={{ maxHeight: 220, overflow: 'auto' }}>
                   <table className="table">
                     <thead><tr><th>Time</th><th>Status</th><th>HTTP</th><th>Latency</th></tr></thead>
                     <tbody>
-                      {jobLogs.slice(0, 6).map((log) => (
+                      {jobLogs.slice(0, 8).map((log) => (
                         <tr key={log.id}>
                           <td>{formatAgo(log.created_at)}</td>
                           <td><span className={`badge badge-sm ${statusTone(log.status)}`}>{log.status}</span></td>
-                          <td>{log.status_code || '-'}</td>
-                          <td>{log.latency_ms ? `${log.latency_ms}ms` : '-'}</td>
+                          <td>{log.status_code || '—'}</td>
+                          <td>{log.latency_ms ? `${log.latency_ms}ms` : '—'}</td>
                         </tr>
                       ))}
-                      {jobLogs.length === 0 && <tr><td colSpan="4" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No runs yet</td></tr>}
+                      {jobLogs.length === 0 && (
+                        <tr><td colSpan="4" style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No runs yet — hit Run to execute now</td></tr>
+                      )}
                     </tbody>
                   </table>
                 </div>

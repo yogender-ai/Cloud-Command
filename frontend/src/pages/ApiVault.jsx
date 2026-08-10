@@ -569,20 +569,20 @@ export default function ApiVault() {
         </div>
       </div>
 
-      {/* ── Stat Cards ── */}
+      {/* ── Stat Cards (theme-aware colors) ── */}
       {summary && (
-        <div className="grid grid-3" style={{ marginBottom: 24, gap: 16 }}>
+        <div className="grid grid-3 vault-stats" style={{ marginBottom: 24, gap: 16 }}>
           {[
-            { icon: <KeyRound size={20} />, label: 'Total Keys', value: summary.total_keys, color: '#6366f1', glow: 'rgba(99,102,241,0.1)' },
-            { icon: <Shield size={20} />, label: 'Active', value: summary.active_keys, color: '#10b981', glow: 'var(--accent-emerald-glow)' },
-            { icon: <Zap size={20} />, label: 'Tokens Today', value: (summary.tokens_today || 0).toLocaleString(), color: '#a855f7', glow: 'var(--accent-purple-glow)' },
-            { icon: <Server size={20} />, label: 'Requests Today', value: summary.requests_today || 0, color: '#0ea5e9', glow: 'rgba(14,165,233,0.1)' },
-            { icon: <AlertCircle size={20} />, label: 'Errors Today', value: summary.errors_today || 0, color: '#f43f5e', glow: 'rgba(244,63,94,0.1)' },
-            { icon: <TrendingUp size={20} />, label: 'Success Rate', value: summary.requests_today > 0 ? `${Math.round(((summary.requests_today - summary.errors_today) / summary.requests_today) * 100)}%` : '—', color: '#10b981', glow: 'rgba(16,185,129,0.1)' },
+            { icon: <KeyRound size={20} />, label: 'Total Keys', value: summary.total_keys, color: 'var(--accent-indigo)', glow: 'var(--accent-indigo-glow)' },
+            { icon: <Shield size={20} />, label: 'Active', value: summary.active_keys, color: 'var(--accent-emerald)', glow: 'var(--accent-emerald-glow)' },
+            { icon: <Zap size={20} />, label: 'Tokens Today', value: (summary.tokens_today || 0).toLocaleString(), color: 'var(--accent-purple)', glow: 'var(--accent-purple-glow)' },
+            { icon: <Server size={20} />, label: 'Requests Today', value: summary.requests_today || 0, color: 'var(--accent-cyan)', glow: 'var(--accent-cyan-glow)' },
+            { icon: <AlertCircle size={20} />, label: 'Errors Today', value: summary.errors_today || 0, color: 'var(--accent-rose)', glow: 'var(--accent-rose-glow)' },
+            { icon: <TrendingUp size={20} />, label: 'Success Rate', value: summary.requests_today > 0 ? `${Math.round(((summary.requests_today - (summary.errors_today || 0)) / summary.requests_today) * 100)}%` : '—', color: 'var(--accent-emerald)', glow: 'var(--accent-emerald-glow)' },
           ].map((s, i) => (
             <motion.div key={i} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: i * 0.06 }}
-              className="card stat-card" style={{ borderLeft: `3px solid ${s.color}` }}>
-              <div className="stat-icon" style={{ background: s.glow }}>{React.cloneElement(s.icon, { color: s.color })}</div>
+              className="card stat-card card-interactive" style={{ borderLeft: `3px solid ${s.color}` }}>
+              <div className="stat-icon" style={{ background: s.glow, color: s.color }}>{s.icon}</div>
               <div>
                 <div className="stat-label">{s.label}</div>
                 <div className="stat-value" style={{ color: s.color }}>{s.value}</div>
