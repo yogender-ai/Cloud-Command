@@ -197,8 +197,8 @@ export default function ScheduledJobs() {
     <div className="page-container">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Scheduled Jobs</h1>
-          <p className="page-subtitle">Run protected HTTP tasks from Cloud Command without paid background workers.</p>
+          <h1 className="page-title gradient-text-animated">Scheduled Jobs</h1>
+          <p className="page-subtitle">HTTP cron from Cloud Command — run now, pause, inspect logs</p>
         </div>
         <div className="header-actions">
           <button className="btn btn-secondary btn-sm" onClick={load} title="Refresh"><RefreshCcw size={15} /> Refresh</button>

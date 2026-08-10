@@ -70,7 +70,7 @@ export default function Register() {
               <text x="2" y="21" fontSize="20" fontWeight="900" fontFamily="monospace" fill="#fff">&gt;_</text>
             </svg>
           </div>
-          <h1 className="auth-left-title">Cloud Command</h1>
+          <h1 className="auth-left-title gradient-text-animated">Cloud Command</h1>
           <p className="auth-left-sub">Join thousands of developers who trust Cloud Command to monitor their infrastructure.</p>
           <div className="auth-features">
             {features.map(({ icon: Icon, label, desc }) => (

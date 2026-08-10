@@ -549,10 +549,10 @@ export default function ApiVault() {
     <div className="page-container">
       <div className="page-header">
         <div>
-          <h1 className="page-title">API Vault</h1>
-          <p className="page-subtitle" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <Shield size={13} color="var(--accent-emerald)" /> {vaultUnlocked ? "Vault unlocked · Modification authorized" : "Vault secure · Modification requires OTP"}
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 12, padding: '2px 8px', borderRadius: 6, background: 'rgba(16,185,129,0.1)', border: '1px solid rgba(16,185,129,0.2)', fontSize: 11, color: 'var(--accent-emerald)' }}>
+          <h1 className="page-title gradient-text-animated">API Vault</h1>
+          <p className="page-subtitle" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <Shield size={13} color="var(--accent-emerald)" /> {vaultUnlocked ? 'Vault unlocked · Modification authorized' : 'Vault secure · Modification requires OTP'}
+            <span className="badge badge-active badge-live" style={{ marginLeft: 4 }}>
               <Activity size={10} /> LIVE
             </span>
           </p>

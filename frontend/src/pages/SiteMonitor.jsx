@@ -455,8 +455,8 @@ export default function SiteMonitor() {
     <div className="page-container">
       <div className="page-header">
         <div>
-          <h1 className="page-title">Site Monitor</h1>
-          <p className="page-subtitle">Real-time uptime tracking, security inspection & visitor analytics</p>
+          <h1 className="page-title gradient-text-animated">Site Monitor</h1>
+          <p className="page-subtitle">Uptime, latency, SSL inspection & visitor analytics — live from your stack</p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowAdd(true)}><Plus size={16} /> Add Monitor</button>
       </div>

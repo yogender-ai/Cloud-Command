@@ -105,7 +105,7 @@ export default function Login() {
               <text x="2" y="21" fontSize="20" fontWeight="900" fontFamily="monospace" fill="#fff">&gt;_</text>
             </svg>
           </div>
-          <h1 className="auth-left-title">Cloud Command</h1>
+          <h1 className="auth-left-title gradient-text-animated">Cloud Command</h1>
           <p className="auth-left-sub">Your unified DevOps command center. Monitor, manage, and deploy — all in one place.</p>
           <div className="auth-features">
             {features.map(({ icon: Icon, label, desc }) => (

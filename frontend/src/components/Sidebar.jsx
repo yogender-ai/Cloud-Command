@@ -2,9 +2,10 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import {
   LayoutDashboard, Globe, KeyRound, Server, Triangle,
-  Settings, ChevronLeft, ChevronRight, Menu, X, Timer
+  Settings, ChevronLeft, ChevronRight, Menu, X, Timer, LogOut
 } from 'lucide-react';
 import ThemeSwitcher from './ThemeSwitcher';
+import { removeToken } from '../auth';
 
 const navItems = [
   { label: 'Overview', to: '/', icon: LayoutDashboard, section: 'command' },
@@ -29,9 +30,13 @@ export default function Sidebar() {
 
   let lastSection = null;
 
+  const handleLogout = () => {
+    removeToken();
+    window.location.assign('/login');
+  };
+
   return (
     <>
-      {/* Mobile toggle */}
       <button
         className="mobile-menu-btn"
         aria-label={mobileOpen ? 'Close navigation' : 'Open navigation'}
@@ -40,13 +45,18 @@ export default function Sidebar() {
         {mobileOpen ? <X size={22} /> : <Menu size={22} />}
       </button>
 
+      {mobileOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={() => setMobileOpen(false)}
+          aria-hidden
+        />
+      )}
+
       <aside className={`sidebar ${collapsed ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
-        {/* Brand */}
         <div className="sidebar-brand">
           <div className="sidebar-brand-icon">
-            <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-              <text x="1" y="15" fontSize="14" fontWeight="900" fontFamily="monospace" fill="#fff">&gt;_</text>
-            </svg>
+            <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, fontSize: 13, color: '#fff' }}>&gt;_</span>
           </div>
           {(!collapsed || mobileOpen) && (
             <div className="sidebar-brand-text">
@@ -56,7 +66,6 @@ export default function Sidebar() {
           )}
         </div>
 
-        {/* Navigation */}
         <nav className="sidebar-nav">
           {navItems.map((item) => {
             const showSection = item.section !== lastSection;
@@ -84,12 +93,23 @@ export default function Sidebar() {
           })}
         </nav>
 
-        {/* Footer: Theme Switcher + Collapse */}
-        <div className="sidebar-footer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', borderTop: '1px solid var(--border)' }}>
-          <button className="sidebar-collapse-btn" style={{ flex: 1, marginRight: collapsed ? 0 : 8 }} onClick={() => setCollapsed(!collapsed)}>
+        <div className="sidebar-footer sidebar-footer-v4">
+          <button
+            type="button"
+            className="sidebar-collapse-btn"
+            onClick={() => setCollapsed(!collapsed)}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          >
             {collapsed ? <ChevronRight size={16} /> : <><ChevronLeft size={16} /> <span>Collapse</span></>}
           </button>
-          {(!collapsed || mobileOpen) && <ThemeSwitcher />}
+          {(!collapsed || mobileOpen) && (
+            <div className="sidebar-footer-actions">
+              <ThemeSwitcher />
+              <button type="button" className="btn btn-ghost btn-icon" title="Sign out" onClick={handleLogout}>
+                <LogOut size={16} />
+              </button>
+            </div>
+          )}
         </div>
       </aside>
     </>
