@@ -17,26 +17,27 @@
    ══════════════════════════════════════ */
 
 :root,
+[data-theme="slate"],
 [data-theme="midnight"] {
-  /* Prototype Midnight defaults — first paint matches new UI */
-  --bg-primary: #030308;
-  --bg-secondary: #08081a;
-  --bg-card: rgba(12, 12, 26, 0.55);
-  --bg-card-hover: rgba(18, 18, 36, 0.65);
-  --bg-elevated: #111128;
-  --bg-input: rgba(8, 8, 22, 0.6);
+  /* Slate Ops — professional default */
+  --bg-primary: #0B0E14;
+  --bg-secondary: #11161F;
+  --bg-card: rgba(17, 22, 31, 0.72);
+  --bg-card-hover: rgba(24, 30, 42, 0.85);
+  --bg-elevated: #161C28;
+  --bg-input: rgba(10, 13, 20, 0.75);
   --bg-hover: rgba(255, 255, 255, 0.03);
 
-  --border: rgba(99, 102, 241, 0.12);
-  --border-hover: rgba(99, 102, 241, 0.28);
-  --border-focus: #818cf8;
+  --border: rgba(148, 163, 184, 0.12);
+  --border-hover: rgba(148, 163, 184, 0.22);
+  --border-focus: #60A5FA;
 
-  --text-primary: #eef0ff;
-  --text-secondary: #a0a4c8;
-  --text-muted: #5a5e82;
+  --text-primary: #E8EDF5;
+  --text-secondary: #94A3B8;
+  --text-muted: #64748B;
 
-  --accent-indigo: #818cf8;
-  --accent-indigo-glow: rgba(129, 140, 248, 0.15);
+  --accent-indigo: #60A5FA;
+  --accent-indigo-glow: rgba(96, 165, 250, 0.14);
   --accent-emerald: #10b981;
   --accent-emerald-glow: rgba(16, 185, 129, 0.12);
   --accent-amber: #f59e0b;
@@ -48,10 +49,12 @@
   --accent-cyan: #06b6d4;
   --accent-cyan-glow: rgba(6, 182, 212, 0.12);
 
-  --gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  --gradient-main: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  --accent-main: #818cf8;
-  --accent-main-glow: rgba(129, 140, 248, 0.15);
+  --gradient-primary: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
+  --gradient-main: linear-gradient(135deg, #3B82F6 0%, #2563EB 100%);
+  --accent-main: #60A5FA;
+  --accent-main-glow: rgba(96, 165, 250, 0.14);
+  --accent-purple: #93C5FD;
+  --accent-purple-glow: rgba(147, 197, 253, 0.12);
   --gradient-emerald: linear-gradient(135deg, #059669 0%, #10b981 50%, #34d399 100%);
   --gradient-render: linear-gradient(135deg, #46e3b7 0%, #34d399 100%);
   --gradient-vercel: linear-gradient(135deg, #fff 0%, #ccc 100%);
@@ -311,6 +314,11 @@ a:hover {
   margin-left: var(--sidebar-collapsed);
 }
 
+/* When sidebar collapses, main should expand (was looking broken before) */
+.app-layout:has(.sidebar.collapsed) .main-content {
+  margin-left: var(--sidebar-collapsed);
+}
+
 .page-container {
   max-width: 1400px;
   margin: 0 auto;
@@ -485,7 +493,7 @@ a:hover {
 }
 
 .sidebar-footer {
-  padding: 12px;
+  padding: 10px 12px;
   border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -493,15 +501,68 @@ a:hover {
   align-items: stretch;
 }
 
-.sidebar-footer-v4 {
-  align-items: stretch;
-}
-
-.sidebar-footer-actions {
+/* Clean bottom toolbar — replaces awkward full-width Collapse pill */
+.sidebar-toolbar {
+  margin-top: auto;
+  padding: 10px 12px 14px;
+  border-top: 1px solid var(--border);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  justify-content: flex-start;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sidebar-toolbar.is-collapsed {
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 8px 14px;
+}
+
+.sidebar-tool-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+  flex-shrink: 0;
+}
+
+.sidebar-tool-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+
+.sidebar-tool-btn:active {
+  transform: scale(0.96);
+}
+
+/* Theme switcher sits in same toolbar row */
+.sidebar-toolbar .theme-switcher-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.sidebar-toolbar .theme-switcher-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  border-color: var(--border);
 }
 
 .sidebar-backdrop {
@@ -527,6 +588,45 @@ a:hover {
   font-family: var(--font-sans);
   transition: all 0.2s ease;
   cursor: pointer;
+}
+
+/* Professional theme picker cards */
+.theme-grid-pro {
+  gap: 12px !important;
+}
+
+.theme-card-pro {
+  text-align: left !important;
+  border-radius: 14px !important;
+  overflow: hidden;
+  border: 1px solid var(--border) !important;
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+.theme-card-pro.active {
+  border-color: var(--border-focus) !important;
+  box-shadow: 0 0 0 1px var(--accent-indigo-glow), 0 8px 28px rgba(0, 0, 0, 0.35) !important;
+}
+
+.theme-card-meta-pro {
+  padding: 12px 14px 14px;
+  background: rgba(0, 0, 0, 0.25);
+  border-top: 1px solid var(--border);
+}
+
+.theme-card-meta-pro .theme-card-name {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  margin-bottom: 3px;
+}
+
+.theme-card-meta-pro .theme-card-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.35;
 }
 
 .sidebar-collapse-btn:hover {

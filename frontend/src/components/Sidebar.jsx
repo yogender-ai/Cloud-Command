@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import {
   LayoutDashboard, Globe, KeyRound, Server, Triangle,
-  Settings, ChevronLeft, ChevronRight, Menu, X, Timer, LogOut, Compass
+  Settings, PanelLeftClose, PanelLeft, Menu, X, Timer, LogOut, Compass
 } from 'lucide-react';
 import ThemeSwitcher from './ThemeSwitcher';
 import { removeToken } from '../auth';
@@ -46,11 +46,7 @@ export default function Sidebar({ onOpenTour }) {
       </button>
 
       {mobileOpen && (
-        <div
-          className="sidebar-backdrop"
-          onClick={() => setMobileOpen(false)}
-          aria-hidden
-        />
+        <div className="sidebar-backdrop" onClick={() => setMobileOpen(false)} aria-hidden />
       )}
 
       <aside className={`sidebar ${collapsed ? 'collapsed' : ''} ${mobileOpen ? 'mobile-open' : ''}`}>
@@ -84,6 +80,7 @@ export default function Sidebar({ onOpenTour }) {
                   to={item.to}
                   className={`nav-item ${isActive ? 'active' : ''}`}
                   onClick={() => setMobileOpen(false)}
+                  title={collapsed && !mobileOpen ? item.label : undefined}
                 >
                   <span className="nav-item-icon"><Icon size={18} /></span>
                   {(!collapsed || mobileOpen) && <span>{item.label}</span>}
@@ -93,27 +90,30 @@ export default function Sidebar({ onOpenTour }) {
           })}
         </nav>
 
-        <div className="sidebar-footer sidebar-footer-v4">
+        {/* Single clean toolbar — no full-width “Collapse” pill */}
+        <div className={`sidebar-toolbar ${collapsed && !mobileOpen ? 'is-collapsed' : ''}`}>
           <button
             type="button"
-            className="sidebar-collapse-btn"
+            className="sidebar-tool-btn"
             onClick={() => setCollapsed(!collapsed)}
+            title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
-            {collapsed ? <ChevronRight size={16} /> : <><ChevronLeft size={16} /> <span>Collapse</span></>}
+            {collapsed && !mobileOpen ? <PanelLeft size={17} /> : <PanelLeftClose size={17} />}
           </button>
+
           {(!collapsed || mobileOpen) && (
-            <div className="sidebar-footer-actions">
+            <>
               {onOpenTour && (
-                <button type="button" className="btn btn-ghost btn-icon" title="Product tour" onClick={onOpenTour}>
+                <button type="button" className="sidebar-tool-btn" title="Product tour" onClick={onOpenTour}>
                   <Compass size={16} />
                 </button>
               )}
               <ThemeSwitcher />
-              <button type="button" className="btn btn-ghost btn-icon" title="Sign out" onClick={handleLogout}>
+              <button type="button" className="sidebar-tool-btn" title="Sign out" onClick={handleLogout}>
                 <LogOut size={16} />
               </button>
-            </div>
+            </>
           )}
         </div>
       </aside>

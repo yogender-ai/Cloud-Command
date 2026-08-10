@@ -12,9 +12,10 @@ export default function ThemeSwitcher() {
       <button
         className="theme-switcher-btn"
         onClick={() => setOpen(true)}
-        title="Change Theme"
+        title="Appearance"
+        aria-label="Change appearance"
       >
-        <Palette size={18} />
+        <Palette size={16} />
       </button>
 
       <AnimatePresence>
@@ -28,82 +29,77 @@ export default function ThemeSwitcher() {
           >
             <motion.div
               className="theme-picker-panel"
-              initial={{ opacity: 0, scale: 0.9, y: 30 }}
+              initial={{ opacity: 0, scale: 0.96, y: 16 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 30 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 400 }}
-              onClick={e => e.stopPropagation()}
+              exit={{ opacity: 0, scale: 0.98, y: 10 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 360 }}
+              onClick={(e) => e.stopPropagation()}
             >
               <div className="theme-picker-header">
                 <div>
-                  <h2 style={{ fontSize: 20, fontWeight: 800, marginBottom: 4 }}>
-                    ✨ Choose Your Vibe
+                  <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4, letterSpacing: '-0.02em' }}>
+                    Appearance
                   </h2>
-                  <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                    Select a theme that matches your style
+                  <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.45 }}>
+                    Professional palettes tuned for long ops sessions. Status colors stay green / amber / red.
                   </p>
                 </div>
-                <button className="btn btn-ghost btn-icon" onClick={() => setOpen(false)}>
+                <button className="btn btn-ghost btn-icon" onClick={() => setOpen(false)} aria-label="Close">
                   <X size={18} />
                 </button>
               </div>
 
-              <div className="theme-grid">
+              <div className="theme-grid theme-grid-pro">
                 {Object.entries(themes).map(([key, t]) => {
                   const isActive = key === themeName;
                   return (
                     <motion.button
                       key={key}
-                      className={`theme-card ${isActive ? 'active' : ''}`}
+                      type="button"
+                      className={`theme-card theme-card-pro ${isActive ? 'active' : ''}`}
                       onClick={() => setThemeName(key)}
-                      whileHover={{ scale: 1.03, y: -2 }}
-                      whileTap={{ scale: 0.98 }}
-                      style={{
-                        '--tc-accent': t.accent,
-                        '--tc-bg': t.bg,
-                        '--tc-glow': t.accentGlow,
-                        '--tc-gradient': t.gradient,
-                        '--tc-orb1': t.orbColor1,
-                        '--tc-orb2': t.orbColor2,
-                      }}
+                      whileHover={{ y: -2 }}
+                      whileTap={{ scale: 0.99 }}
                     >
-                      {/* Preview area */}
                       <div className="theme-card-preview" style={{ background: t.bg }}>
-                        {/* Orb effects */}
-                        <div className="theme-card-orb theme-card-orb-1" style={{ background: `radial-gradient(circle, ${t.orbColor1.replace('0.1', '0.5').replace('0.12', '0.5')}, transparent 70%)` }} />
-                        <div className="theme-card-orb theme-card-orb-2" style={{ background: `radial-gradient(circle, ${t.orbColor2.replace('0.07', '0.4').replace('0.08', '0.4')}, transparent 70%)` }} />
-                        {/* Mini UI preview */}
+                        <div
+                          className="theme-card-orb theme-card-orb-1"
+                          style={{ background: `radial-gradient(circle, ${t.accent}55, transparent 70%)` }}
+                        />
                         <div className="theme-card-mini-ui">
-                          <div className="theme-mini-sidebar" style={{ background: t.sidebarBg }}>
-                            <div style={{ width: 16, height: 16, borderRadius: 4, background: t.gradient, marginBottom: 8 }} />
-                            <div style={{ width: '100%', height: 5, borderRadius: 2, background: t.accent, opacity: 0.5 }} />
-                            <div style={{ width: '80%', height: 4, borderRadius: 2, background: t.textMuted, opacity: 0.3, marginTop: 4 }} />
-                            <div style={{ width: '70%', height: 4, borderRadius: 2, background: t.textMuted, opacity: 0.2, marginTop: 4 }} />
+                          <div className="theme-mini-sidebar" style={{ background: t.sidebarBg, borderColor: t.border }}>
+                            <div style={{ width: 14, height: 14, borderRadius: 4, background: t.gradient, marginBottom: 8 }} />
+                            <div style={{ width: '100%', height: 4, borderRadius: 2, background: t.accent, opacity: 0.55 }} />
+                            <div style={{ width: '75%', height: 3, borderRadius: 2, background: t.textMuted, opacity: 0.35, marginTop: 5 }} />
+                            <div style={{ width: '60%', height: 3, borderRadius: 2, background: t.textMuted, opacity: 0.25, marginTop: 4 }} />
                           </div>
                           <div className="theme-mini-content">
-                            <div style={{ width: '60%', height: 6, borderRadius: 2, background: t.textPrimary, opacity: 0.6, marginBottom: 6 }} />
-                            <div style={{ display: 'flex', gap: 4 }}>
-                              <div style={{ flex: 1, height: 20, borderRadius: 4, background: t.bgCard, border: `1px solid ${t.border}` }} />
-                              <div style={{ flex: 1, height: 20, borderRadius: 4, background: t.bgCard, border: `1px solid ${t.border}` }} />
+                            <div style={{ width: '55%', height: 5, borderRadius: 2, background: t.textPrimary, opacity: 0.55, marginBottom: 8 }} />
+                            <div style={{ display: 'flex', gap: 5 }}>
+                              <div style={{ flex: 1, height: 22, borderRadius: 5, background: t.bgCard, border: `1px solid ${t.border}` }} />
+                              <div style={{ flex: 1, height: 22, borderRadius: 5, background: t.bgCard, border: `1px solid ${t.border}` }} />
                             </div>
+                            <div
+                              style={{
+                                marginTop: 6,
+                                height: 6,
+                                borderRadius: 3,
+                                background: t.gradient,
+                                opacity: 0.85,
+                                width: '40%',
+                              }}
+                            />
                           </div>
                         </div>
-                        {/* Active checkmark */}
                         {isActive && (
-                          <motion.div
-                            className="theme-card-check"
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            transition={{ type: 'spring', damping: 15 }}
-                          >
-                            <Check size={14} strokeWidth={3} />
-                          </motion.div>
+                          <div className="theme-card-check">
+                            <Check size={13} strokeWidth={3} />
+                          </div>
                         )}
                       </div>
-                      {/* Label */}
-                      <div className="theme-card-label">
-                        <span className="theme-card-icon">{t.icon}</span>
-                        <span className="theme-card-name">{t.name}</span>
+                      <div className="theme-card-meta-pro">
+                        <div className="theme-card-name">{t.name}</div>
+                        <div className="theme-card-desc">{t.description}</div>
                       </div>
                     </motion.button>
                   );
