@@ -46,7 +46,7 @@ function SectionHeader({ icon: Icon, iconBg, title, subtitle }) {
   );
 }
 
-export default function SettingsPage() {
+export default function SettingsPage({ onOpenTour }) {
   const navigate = useNavigate();
   const [profile, setProfile] = useState(null);
   
@@ -200,6 +200,16 @@ export default function SettingsPage() {
                 background: 'var(--accent-emerald-glow)', border: '1px solid rgba(16,185,129,0.3)', fontSize: 12, color: 'var(--accent-emerald)', fontWeight: 600 }}>
                 <CheckCircle2 size={12} /> Alerts Active
               </div>
+            )}
+            {onOpenTour && (
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                style={{ marginTop: 16, width: '100%', justifyContent: 'center' }}
+                onClick={onOpenTour}
+              >
+                Replay product tour
+              </button>
             )}
           </motion.div>
 

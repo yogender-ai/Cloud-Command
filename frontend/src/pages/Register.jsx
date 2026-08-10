@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { Mail, Lock, Eye, EyeOff, Globe, KeyRound, Server } from 'lucide-react';
 import { registerRequest } from '../api';
 import { setToken } from '../auth';
+import { requestOnboarding } from '../components/OnboardingWalkthrough';
 
 const features = [
   { icon: Globe, label: 'Site Monitor', desc: 'Real-time uptime & latency tracking' },
@@ -51,6 +52,8 @@ export default function Register() {
     try {
       const data = await registerRequest(email, password);
       setToken(data.access_token);
+      requestOnboarding();
+      try { window.dispatchEvent(new Event('cc-onboarding-check')); } catch { /* ignore */ }
       navigate('/', { replace: true });
     } catch (err) {
       setError(err.response?.data?.detail || 'Registration failed');

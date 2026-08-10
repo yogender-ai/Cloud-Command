@@ -209,11 +209,27 @@ export default function ScheduledJobs() {
       </div>
 
       {jobs.length > 0 && (
-        <div className="summary-strip">
-          <div className="summary-chip"><span className="summary-chip-label">Jobs</span><strong>{jobs.length}</strong></div>
-          <div className="summary-chip success"><span className="summary-chip-label">Enabled</span><strong>{jobs.filter(j => j.is_enabled).length}</strong></div>
-          <div className="summary-chip"><span className="summary-chip-label">Paused</span><strong>{jobs.filter(j => !j.is_enabled).length}</strong></div>
-          <div className="summary-chip danger"><span className="summary-chip-label">Failed</span><strong>{jobs.filter(j => j.status === 'FAILED').length}</strong></div>
+        <div className="summary-strip cols-4">
+          <div className="summary-chip muted">
+            <span className="summary-chip-label">Jobs</span>
+            <strong>{jobs.length}</strong>
+            <span className="summary-chip-hint">total configured</span>
+          </div>
+          <div className="summary-chip success">
+            <span className="summary-chip-label">Enabled</span>
+            <strong>{jobs.filter(j => j.is_enabled).length}</strong>
+            <span className="summary-chip-hint">running on schedule</span>
+          </div>
+          <div className="summary-chip warning">
+            <span className="summary-chip-label">Paused</span>
+            <strong>{jobs.filter(j => !j.is_enabled).length}</strong>
+            <span className="summary-chip-hint">not firing</span>
+          </div>
+          <div className={`summary-chip ${jobs.some(j => j.status === 'FAILED') ? 'danger' : ''}`}>
+            <span className="summary-chip-label">Failed</span>
+            <strong>{jobs.filter(j => j.status === 'FAILED').length}</strong>
+            <span className="summary-chip-hint">last run errors</span>
+          </div>
         </div>
       )}
 

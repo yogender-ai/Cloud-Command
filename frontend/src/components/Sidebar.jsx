@@ -2,7 +2,7 @@ import { NavLink, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 import {
   LayoutDashboard, Globe, KeyRound, Server, Triangle,
-  Settings, ChevronLeft, ChevronRight, Menu, X, Timer, LogOut
+  Settings, ChevronLeft, ChevronRight, Menu, X, Timer, LogOut, Compass
 } from 'lucide-react';
 import ThemeSwitcher from './ThemeSwitcher';
 import { removeToken } from '../auth';
@@ -17,7 +17,7 @@ const navItems = [
   { label: 'Settings', to: '/settings', icon: Settings, section: 'system' },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ onOpenTour }) {
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
@@ -104,6 +104,11 @@ export default function Sidebar() {
           </button>
           {(!collapsed || mobileOpen) && (
             <div className="sidebar-footer-actions">
+              {onOpenTour && (
+                <button type="button" className="btn btn-ghost btn-icon" title="Product tour" onClick={onOpenTour}>
+                  <Compass size={16} />
+                </button>
+              )}
               <ThemeSwitcher />
               <button type="button" className="btn btn-ghost btn-icon" title="Sign out" onClick={handleLogout}>
                 <LogOut size={16} />

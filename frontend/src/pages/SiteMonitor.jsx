@@ -463,25 +463,30 @@ export default function SiteMonitor() {
 
       {monitors.length > 0 && (
         <div className="summary-strip anim-fade">
-          <div className="summary-chip">
+          <div className="summary-chip muted">
             <span className="summary-chip-label">Total</span>
             <strong>{monitors.length}</strong>
+            <span className="summary-chip-hint">monitors tracked</span>
           </div>
           <div className="summary-chip success">
             <span className="summary-chip-label">Up</span>
             <strong>{upCount}</strong>
+            <span className="summary-chip-hint">healthy right now</span>
           </div>
           <div className={`summary-chip ${downCount ? 'danger' : ''}`}>
             <span className="summary-chip-label">Down</span>
             <strong>{downCount}</strong>
+            <span className="summary-chip-hint">need attention</span>
           </div>
           <div className={`summary-chip ${warmCount ? 'warning' : ''}`}>
             <span className="summary-chip-label">Warming</span>
             <strong>{warmCount}</strong>
+            <span className="summary-chip-hint">awakening / sleep</span>
           </div>
           <div className="summary-chip muted">
             <span className="summary-chip-label">Health</span>
             <strong>{monitors.length ? `${((upCount / monitors.length) * 100).toFixed(0)}%` : '—'}</strong>
+            <span className="summary-chip-hint">up / total</span>
           </div>
         </div>
       )}
