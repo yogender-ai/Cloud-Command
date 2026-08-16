@@ -41,3 +41,5 @@ logs/
 
 # Runtime
 *.pid
+.vercel
+.env*

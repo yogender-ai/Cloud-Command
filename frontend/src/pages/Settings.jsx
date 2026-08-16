@@ -9,7 +9,6 @@ import {
 import { toast } from 'sonner';
 import { removeToken } from '../auth';
 import { requestOtp, verifyOtp, getProfile, changePassword, getGatewayKeys, createGatewayKey, deleteGatewayKey } from '../api';
-import { getShell, setShell } from '../shellMode';
 
 const apiError = (err, fallback) => err.response?.data?.detail || err.message || fallback;
 
@@ -73,7 +72,6 @@ export default function SettingsPage({ onOpenTour }) {
   const [revealedGatewayUrl, setRevealedGatewayUrl] = useState('');
   const [revealedGatewaySecret, setRevealedGatewaySecret] = useState('');
   const [copied, setCopied] = useState(false);
-  const [shell, setShellState] = useState(getShell);
 
   useEffect(() => { 
     getProfile().then(setProfile).catch(() => {}); 
@@ -167,29 +165,6 @@ export default function SettingsPage({ onOpenTour }) {
         <div>
           <h1 className="page-title">Settings</h1>
           <p className="page-subtitle">Manage your profile, notifications, and security</p>
-        </div>
-      </div>
-
-      <div className="card" style={{ padding: 18, marginBottom: 18 }}>
-        <h3 style={{ fontSize: 15, marginBottom: 6 }}>Interface</h3>
-        <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
-          The Gate is the new home. Classic keeps the old sidebar dashboard. The old code is also saved in frontend/src-classic.
-        </p>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button
-            type="button"
-            className={shell === 'gate' ? 'btn' : 'btn btn-secondary'}
-            onClick={() => { setShell('gate'); setShellState('gate'); }}
-          >
-            The Gate
-          </button>
-          <button
-            type="button"
-            className={shell === 'classic' ? 'btn' : 'btn btn-secondary'}
-            onClick={() => { setShell('classic'); setShellState('classic'); }}
-          >
-            Classic dashboard
-          </button>
         </div>
       </div>
 

@@ -1,13 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { isLoggedIn } from './auth';
 import Sidebar from './components/Sidebar';
-import GateChrome from './components/GateChrome';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
-import GateHome from './pages/GateHome';
 import SiteMonitor from './pages/SiteMonitor';
 import ScheduledJobs from './pages/ScheduledJobs';
 import ApiVault from './pages/ApiVault';
@@ -19,7 +17,6 @@ import OnboardingWalkthrough, {
   shouldShowOnboarding,
   requestOnboarding,
 } from './components/OnboardingWalkthrough';
-import { getShell, SHELL_EVENT } from './shellMode';
 
 function ProtectedRoute({ children }) {
   return isLoggedIn() ? children : <Navigate to="/login" replace />;
@@ -40,28 +37,8 @@ function AppLayout({ children, onOpenTour }) {
   );
 }
 
-function GateLayout({ children, live }) {
-  return (
-    <div className="gate-app">
-      <GateChrome live={live} />
-      <main className="gate-main">
-        {children}
-      </main>
-    </div>
-  );
-}
-
 export default function App() {
   const [tourOpen, setTourOpen] = useState(false);
-  const [shell, setShellState] = useState(getShell);
-  const [live, setLive] = useState(null);
-  const onLive = useCallback((next) => setLive(next), []);
-
-  useEffect(() => {
-    const onChange = (event) => setShellState(event.detail || getShell());
-    window.addEventListener(SHELL_EVENT, onChange);
-    return () => window.removeEventListener(SHELL_EVENT, onChange);
-  }, []);
 
   useEffect(() => {
     if (isLoggedIn() && shouldShowOnboarding()) {
@@ -94,14 +71,13 @@ export default function App() {
         <Route path="/login" element={<PublicRoute><Login /></PublicRoute>} />
         <Route path="/register" element={<PublicRoute><Register /></PublicRoute>} />
 
-        <Route path="/" element={<ProtectedRoute>{shell === 'classic' ? <AppLayout onOpenTour={openTour}><Dashboard /></AppLayout> : <GateLayout live={live}><GateHome onLive={onLive} /></GateLayout>}</ProtectedRoute>} />
-        <Route path="/overview" element={<ProtectedRoute>{shell === 'classic' ? <AppLayout onOpenTour={openTour}><Dashboard /></AppLayout> : <GateLayout live={live}><Dashboard /></GateLayout>}</ProtectedRoute>} />
-        <Route path="/monitors" element={<ProtectedRoute>{shell === 'classic' ? <AppLayout onOpenTour={openTour}><SiteMonitor /></AppLayout> : <GateLayout live={live}><SiteMonitor /></GateLayout>}</ProtectedRoute>} />
-        <Route path="/scheduled-jobs" element={<ProtectedRoute>{shell === 'classic' ? <AppLayout onOpenTour={openTour}><ScheduledJobs /></AppLayout> : <GateLayout live={live}><ScheduledJobs /></GateLayout>}</ProtectedRoute>} />
-        <Route path="/api-keys" element={<ProtectedRoute>{shell === 'classic' ? <AppLayout onOpenTour={openTour}><ApiVault /></AppLayout> : <GateLayout live={live}><ApiVault /></GateLayout>}</ProtectedRoute>} />
-        <Route path="/render" element={<ProtectedRoute>{shell === 'classic' ? <AppLayout onOpenTour={openTour}><RenderHub /></AppLayout> : <GateLayout live={live}><RenderHub /></GateLayout>}</ProtectedRoute>} />
-        <Route path="/vercel" element={<ProtectedRoute>{shell === 'classic' ? <AppLayout onOpenTour={openTour}><VercelHub /></AppLayout> : <GateLayout live={live}><VercelHub /></GateLayout>}</ProtectedRoute>} />
-        <Route path="/settings" element={<ProtectedRoute>{shell === 'classic' ? <AppLayout onOpenTour={openTour}><SettingsPage onOpenTour={openTour} /></AppLayout> : <GateLayout live={live}><SettingsPage onOpenTour={openTour} /></GateLayout>}</ProtectedRoute>} />
+        <Route path="/" element={<ProtectedRoute><AppLayout onOpenTour={openTour}><Dashboard /></AppLayout></ProtectedRoute>} />
+        <Route path="/monitors" element={<ProtectedRoute><AppLayout onOpenTour={openTour}><SiteMonitor /></AppLayout></ProtectedRoute>} />
+        <Route path="/scheduled-jobs" element={<ProtectedRoute><AppLayout onOpenTour={openTour}><ScheduledJobs /></AppLayout></ProtectedRoute>} />
+        <Route path="/api-keys" element={<ProtectedRoute><AppLayout onOpenTour={openTour}><ApiVault /></AppLayout></ProtectedRoute>} />
+        <Route path="/render" element={<ProtectedRoute><AppLayout onOpenTour={openTour}><RenderHub /></AppLayout></ProtectedRoute>} />
+        <Route path="/vercel" element={<ProtectedRoute><AppLayout onOpenTour={openTour}><VercelHub /></AppLayout></ProtectedRoute>} />
+        <Route path="/settings" element={<ProtectedRoute><AppLayout onOpenTour={openTour}><SettingsPage onOpenTour={openTour} /></AppLayout></ProtectedRoute>} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
