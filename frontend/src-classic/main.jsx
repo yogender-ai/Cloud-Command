@@ -4,7 +4,6 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App';
 import { ThemeProvider } from './ThemeContext';
 import './index.css';
-import './gate.css';
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

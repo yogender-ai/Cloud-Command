@@ -315,7 +315,7 @@ def get_summary(
             "total_keys": total, "active_keys": active,
             "tokens_today": 0, "requests_today": 0, "errors_today": 0,
             "usage_history": [], "per_key": [],
-            "key_groups": [], "recent_errors": [],
+            "key_groups": [], "recent_errors": [], "recent_calls": [],
         }
 
     # ── Today's totals (single aggregate query) ──
@@ -409,12 +409,29 @@ def get_summary(
         "status_code": e.status_code, "error_message": e.error_message,
     } for e in recent_errors_q]
 
+    recent_calls_q = (
+        db.query(models.ApiUsageLog)
+        .filter(models.ApiUsageLog.api_key_id.in_(key_ids))
+        .order_by(models.ApiUsageLog.timestamp.desc()).limit(12).all()
+    )
+    recent_calls_data = [{
+        "id": c.id,
+        "timestamp": c.timestamp.isoformat() if c.timestamp else None,
+        "key_name": next((x.name for x in keys if x.id == c.api_key_id), c.api_key_name),
+        "provider": next((x.provider for x in keys if x.id == c.api_key_id), None),
+        "tokens_used": int(c.tokens_used or 0),
+        "status_code": c.status_code,
+        "is_error": bool(c.is_error),
+        "error_message": c.error_message,
+    } for c in recent_calls_q]
+
     return {
         "total_keys": total, "active_keys": active,
         "tokens_today": tokens_today, "requests_today": requests_today,
         "errors_today": errors_today, "usage_history": history,
         "per_key": per_key, "key_groups": groups_data,
         "recent_errors": recent_errors_data,
+        "recent_calls": recent_calls_data,
     }
 
 

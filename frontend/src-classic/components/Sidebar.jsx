@@ -6,7 +6,6 @@ import {
 } from 'lucide-react';
 import ThemeSwitcher from './ThemeSwitcher';
 import { removeToken } from '../auth';
-import { setShell } from '../shellMode';
 
 const navItems = [
   { label: 'Overview', to: '/', icon: LayoutDashboard, section: 'command' },
@@ -111,9 +110,6 @@ export default function Sidebar({ onOpenTour }) {
                 </button>
               )}
               <ThemeSwitcher />
-              <button type="button" className="sidebar-tool-btn" title="Open The Gate" onClick={() => setShell('gate')}>
-                Gate
-              </button>
               <button type="button" className="sidebar-tool-btn" title="Sign out" onClick={handleLogout}>
                 <LogOut size={16} />
               </button>
